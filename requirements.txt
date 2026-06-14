@@ -1,0 +1,41 @@
+# --- 核心 Discord 框架 ---
+discord.py>=2.3.2
+# 语音支持必需（即便用 Lavalink，Discord 底层握手也需要它）
+PyNaCl>=1.5.0
+
+# --- Web 框架与实时通信 ---
+Flask>=3.0.0
+# 你的代码中使用了 CSRFProtect，必须安装这个
+Flask-WTF>=1.2.1
+Flask-SocketIO>=5.3.6
+# 允许跨域请求（Web 面板 Socket 常用）
+flask-cors>=4.0.0
+# Socket.IO 生产环境引擎
+eventlet>=0.33.3
+gunicorn>=21.2.0
+werkzeug>=3.0.1
+
+# --- 音乐系统 (Lavalink) ---
+# 你的 music_cog.py 核心库
+wavelink>=3.0.0
+# Lavalink 可能会用到音频解析
+yt-dlp>=2023.12.30
+
+# --- AI 与 TTS 语音指挥官 ---
+# 你的信道控制页面使用了 edge_tts 发送语音
+edge-tts>=6.1.9
+# AI 对话调用 API 必需
+aiohttp>=3.9.1
+
+# --- 支付系统 (支付宝) ---
+alipay-sdk-python>=3.3.0
+# 签名验证与加密
+pycryptodome>=3.20.0
+# 二维码生成（含图片处理支持）
+qrcode[pil]>=7.4.2
+
+# --- 工具类 ---
+python-dotenv>=1.0.0
+requests>=2.31.0
+# 某些环境下 Pillow 是 qrcode 必需的依赖
+Pillow>=10.2.0

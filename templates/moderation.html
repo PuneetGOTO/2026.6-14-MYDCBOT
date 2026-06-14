@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 专属于此页面的CSS */
+    .terminal-body { 
+        background-color: #050a0e; 
+        background-image: 
+            linear-gradient(rgba(255, 85, 85, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 85, 85, 0.05) 1px, transparent 1px);
+        background-size: 30px 30px;
+    }
+
+    .terminal-card {
+        background: rgba(15, 5, 10, 0.85);
+        border: 1px solid rgba(255, 0, 85, 0.5);
+        box-shadow: 0 0 25px rgba(255, 0, 85, 0.3), inset 0 0 15px rgba(255, 0, 85, 0.1);
+        backdrop-filter: blur(8px);
+        border-radius: 0;
+    }
+    .terminal-card .card-header {
+        font-family: var(--font-primary);
+        text-transform: uppercase;
+        background: rgba(255, 0, 85, 0.2);
+        border-bottom: 1px solid rgba(255, 0, 85, 0.5);
+    }
+    .terminal-label { 
+        color: var(--warning-glow); 
+        text-shadow: 0 0 5px var(--warning-glow); 
+        font-size: 0.9rem;
+        text-transform: uppercase;
+    }
+    .terminal-input, .terminal-input:focus {
+        font-family: var(--font-mono);
+        background-color: rgba(0,0,0,0.7) !important;
+        border-color: rgba(255, 170, 0, 0.5) !important;
+        color: var(--warning-glow) !important;
+        box-shadow: none;
+    }
+    .terminal-input:focus {
+        border-color: var(--warning-glow) !important;
+        box-shadow: 0 0 15px rgba(255, 170, 0, 0.5) !important;
+    }
+    .terminal-btn {
+        text-shadow: 0 0 8px;
+        animation: pulse-danger 1.5s infinite;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+    @keyframes pulse-danger {
+        0% { box-shadow: 0 0 5px var(--danger-glow); }
+        50% { box-shadow: 0 0 25px var(--danger-glow); }
+        100% { box-shadow: 0 0 5px var(--danger-glow); }
+    }
+    .terminal-table { --bs-table-striped-bg: rgba(255, 0, 85, 0.05); --bs-table-hover-bg: rgba(255, 0, 85, 0.1); }
+    .countdown-timer { font-family: var(--font-mono); font-weight: 700; color: var(--warning-glow); text-shadow: 0 0 4px var(--warning-glow); }
+</style>
+
+<body data-page-id="moderation" data-guild-id="{{ guild.id }}">
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fa-solid fa-user-lock"></i> 禁言/审核 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">对服务器成员执行禁言操作，并监控当前被禁言的成员。</p>
+    
+    <div class="row">
+        <div class="col-lg-5 mb-4 mb-lg-0">
+            <div class="card h-100 terminal-card">
+                <div class="card-header text-danger"><i class="fa-solid fa-code"></i> 指令终端: TIMEOUT_PROTOCOL</div>
+                <div class="card-body">
+                    <form id="mute-form">
+                        <div class="mb-3">
+                            <label for="mute-user-id" class="form-label terminal-label">> user_id:</label>
+                            <select class="form-select terminal-input" name="user_id" id="mute-user-id" required>
+                                <option value="" disabled selected>选择目标用户...</option>
+                                {% for member in members %}<option value="{{member.id}}">{{member.name}} ({{member.id}})</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="mute-duration" class="form-label terminal-label">> duration_minutes: (0=永久)</label>
+                            <input type="number" class="form-control terminal-input" name="duration_minutes" id="mute-duration" placeholder="输入分钟数..." required min="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="mute-reason" class="form-label terminal-label">> reason:</label>
+                            <input type="text" class="form-control terminal-input" name="reason" id="mute-reason" placeholder="输入原因 (可选)...">
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100 terminal-btn"><i class="fa-solid fa-bolt"></i> 执行禁言协议</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card h-100 terminal-card">
+                 <div class="card-header text-warning"><i class="fa-solid fa-list-ul"></i> 实时禁言状态监控</div>
+                 <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle terminal-table">
+                            <thead><tr><th>用户</th><th>原因</th><th>剩余时间</th><th>操作</th></tr></thead>
+                            <tbody id="muted-users-list"><tr><td colspan="4" class="text-center text-muted">正在扫描禁言记录...</td></tr></tbody>
+                        </table>
+                    </div>
+                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+{% endblock %}

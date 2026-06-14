@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 专属于此页面的CSS */
+    .terminal-body { background: #000; }
+    .page-title { font-family: var(--font-title); color: var(--danger-glow); text-shadow: 0 0 8px var(--danger-glow); letter-spacing: 2px; }
+    .page-subtitle { font-family: var(--font-mono); color: var(--text-secondary); }
+    .page-subtitle::before { content: 'SYSTEM_STATUS: '; color: var(--warning-glow); }
+    
+    .audit-card { background: rgba(20, 10, 15, 0.9); border: 1px solid rgba(255, 0, 85, 0.4); box-shadow: 0 0 20px rgba(255, 0, 85, 0.2); backdrop-filter: blur(5px); }
+    .audit-card-header { font-family: var(--font-mono); background: rgba(255, 0, 85, 0.1); border-bottom: 1px solid rgba(255, 0, 85, 0.4); text-transform: uppercase; color: var(--danger-glow); }
+    
+    /* 审核日志流容器 */
+    #audit-log-container {
+        height: 75vh;
+        overflow-y: auto;
+    }
+
+    /* 单个违规事件卡片 */
+    .violation-card {
+        background-color: var(--bg-dark-2);
+        border: 1px solid var(--border-color);
+        transition: opacity 0.5s ease;
+    }
+    .violation-card .message-content {
+        background-color: rgba(0,0,0,0.3);
+        padding: 0.75rem;
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 150px;
+        overflow-y: auto;
+    }
+    .violation-card .avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+    }
+
+    /* Glitch 动画 (保留) */
+    .glitch { position: relative; }
+    @keyframes glitch-anim{ 2%,64%{ transform: translate(2px,0) skew(0deg); } 4%,60%{ transform: translate(-2px,0) skew(0deg); } 62%{ transform: translate(0,0) skew(5deg); } }
+    .glitch:before, .glitch:after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; }
+    .glitch:before { animation: glitch-top 1s linear infinite; clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%); -webkit-clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%); }
+    @keyframes glitch-top{ 2%,64%{ transform: translate(2px,-2px); } 4%,60%{ transform: translate(-2px,2px); } 62%{ transform: translate(13px,-1px) skew(-13deg); } }
+    .glitch:after { animation: glitch-bottom 1.5s linear infinite; clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%); -webkit-clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%); }
+    @keyframes glitch-bottom{ 2%,64%{ transform: translate(-2px,0); } 4%,60%{ transform: translate(-2px,0); } 62%{ transform: translate(-22px,5px) skew(21deg); } }
+
+</style>
+
+<body data-page-id="audit_core" data-guild-id="{{ guild.id }}" class="terminal-body">
+
+<div class="container-fluid p-4">
+    <h1 class="page-title glitch" data-text="普罗米修斯 // 内容审查核心"><i class="fa-solid fa-biohazard"></i> 普罗米修斯 // 内容审查核心 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="page-subtitle">> 正在分析数据流中的异常语言模式...</p>
+
+    <div class="row">
+        <!-- 左侧：实时违规日志 -->
+        <div class="col-lg-8 mb-4">
+            <div class="audit-card">
+                <div class="audit-card-header">实时违规日志流</div>
+                <div id="audit-log-container" class="p-3">
+                    <!-- JS会在这里填充违规事件卡片 -->
+                    <p class="text-muted text-center p-5" id="no-logs-placeholder">正在等待新的违规事件...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：豁免管理 -->
+        <div class="col-lg-4 mb-4">
+            <div class="audit-card">
+                 <div class="audit-card-header">AI审查豁免协议</div>
+                 <div class="card-body">
+                    <h6 class="terminal-label">> 豁免用户</h6>
+                    <form id="exempt-user-form" class="input-group mb-3">
+                        <select name="user_id" class="form-select terminal-input" required>
+                            <option value="" disabled selected>选择要豁免的用户...</option>
+                            {% for member in all_members %}
+                            <option value="{{ member.id }}">{{ member.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-outline-success" type="submit">添加</button>
+                    </form>
+                    <ul class="list-group mb-3" id="exempt-users-list" style="max-height: 200px; overflow-y: auto;">
+                        {% for u in exempt_users %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-entity-id="{{ u.id }}">
+                            <span>{{ u.name }}</span>
+                            <button class="btn btn-sm btn-outline-danger action-btn" data-action="ai_exempt_remove_user"><i class="fa-solid fa-trash"></i></button>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">无豁免用户</li>
+                        {% endfor %}
+                    </ul>
+
+                     <h6 class="terminal-label">> 豁免频道</h6>
+                     <form id="exempt-channel-form" class="input-group mb-3">
+                        <select name="channel_id" class="form-select terminal-input" required>
+                             <option value="" disabled selected>选择要豁免的频道...</option>
+                            {% for c in all_text_channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+                        </select>
+                        <button class="btn btn-outline-success" type="submit">添加</button>
+                     </form>
+                    <ul class="list-group" id="exempt-channels-list" style="max-height: 200px; overflow-y: auto;">
+                         {% for c in exempt_channels %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-entity-id="{{ c.id }}">
+                            <span>#{{ c.name }}</span>
+                            <button class="btn btn-sm btn-outline-danger action-btn" data-action="ai_exempt_remove_channel"><i class="fa-solid fa-trash"></i></button>
+                        </li>
+                        {% else %}
+                         <li class="list-group-item text-muted">无豁免频道</li>
+                        {% endfor %}
+                    </ul>
+                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 【核心】引入 Socket.IO 客户端库，这是唯一需要的脚本引入 -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+</body>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<body data-page-id="announcements" data-guild-id="{{ guild.id }}">
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fa-solid fa-bullhorn"></i> 公告发布 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">创建并向指定频道发送格式化的嵌入式公告。</p>
+
+    <div class="card">
+        <div class="card-header">发送新公告</div>
+        <div class="card-body">
+            <form id="announce-form">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">频道</label>
+                        <select class="form-select" name="channel_id" required>
+                            {% for c in text_channels %}
+                            <option value="{{ c.id }}">#{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">提及身份组</label>
+                        <select class="form-select" name="role_id">
+                            <option value="">无</option>
+                            <!-- 【核心修改】在这里手动添加 @everyone 选项 -->
+                            <option value="{{ guild.id }}">@everyone (警告：会通知所有人！)</option>
+                            <!-- 【修改结束】 -->
+                            {% for role in roles %}
+                            <option value="{{ role.id }}">@{{ role.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">标题</label>
+                    <input type="text" class="form-control" name="title" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">消息内容 (使用 `\n` 换行)</label>
+                    <textarea class="form-control" name="message" rows="5" required></textarea>
+                </div>
+                <div class="row">
+                    <div class="col-md-9 mb-3">
+                        <label class="form-label">图片链接 (可选)</label>
+                        <input type="url" class="form-control" name="image_url" placeholder="https://...">
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">颜色</label>
+                        <input type="color" class="form-control form-control-color" name="color" value="#5865F2">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> 发送</button>
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+{% endblock %}

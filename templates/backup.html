@@ -1,0 +1,95 @@
+<!-- templates/backup.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 专属于此页面的CSS */
+    #restore-log-container {
+        font-family: var(--font-mono);
+        background-color: #000;
+        color: #00ffaa;
+        height: 400px;
+        overflow-y: scroll;
+        padding: 1rem;
+        border-radius: 4px;
+        border: 1px solid var(--secondary-glow);
+        white-space: pre-wrap;
+    }
+    .restore-log-entry {
+        display: block;
+        margin-bottom: 0.25rem;
+    }
+    .log-error {
+        color: var(--danger-glow);
+    }
+    .log-warn {
+        color: var(--warning-glow);
+    }
+    .log-success {
+        color: #00ffaa;
+    }
+    .log-info {
+        color: #ccc;
+    }
+</style>
+<body data-page-id="backup" data-guild-id="{{ guild.id }}">
+
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fas fa-save"></i> 服务器备份与恢复 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">创建服务器结构（角色、频道、权限）的快照，或从快照中恢复。</p>
+
+    <!-- 备份区域 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            创建服务器备份
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">下载服务器快照</h5>
+            <p>点击下方按钮将生成一个包含当前服务器所有角色、频道、分类及其权限设置的JSON文件。请妥善保管此文件。</p>
+            <button id="create-backup-btn" class="btn btn-primary">
+                <i class="fas fa-download"></i> 创建并下载备份
+            </button>
+        </div>
+    </div>
+
+    <!-- 恢复区域 -->
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <i class="fas fa-exclamation-triangle"></i> 从备份恢复服务器
+        </div>
+        <div class="card-body">
+            <div class="alert alert-danger">
+                <strong>警告：这是一个极具破坏性的操作！</strong> 恢复过程将会 **删除当前服务器所有的角色和频道**，然后根据您上传的备份文件重新创建。此操作不可逆，请务必在操作前确认您已备份好重要数据，并清楚知道后果。
+            </div>
+            <form id="restore-form">
+                <div class="mb-3">
+                    <label for="backup-file-input" class="form-label">1. 选择备份文件 (.json)</label>
+                    <input type="file" class="form-control" id="backup-file-input" accept=".json" required>
+                </div>
+                <div class="mb-3">
+                    <label for="confirmation-phrase" class="form-label">2. 输入确认短语</label>
+                    <p>为防止误操作，请输入下方的确认短语：<code>{{ guild.name }}/RESTORE</code></p>
+                    <input type="text" class="form-control" id="confirmation-phrase" placeholder="在此输入确认短语" required autocomplete="off">
+                </div>
+                <button type="submit" id="restore-btn" class="btn btn-danger w-100">
+                    <i class="fas fa-undo"></i> 我已了解风险，开始恢复
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- 恢复日志 -->
+    <div id="restore-log-card" class="card mt-4" style="display: none;">
+        <div class="card-header">恢复日志</div>
+        <div class="card-body">
+            <div id="restore-log-container"></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- 引入 Socket.IO 客户端库 -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+</body>
+{% endblock %}

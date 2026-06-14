@@ -1,0 +1,185 @@
+<!-- templates/base.html (完整版 - 包含音乐入口) -->
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- CSRF Token (安全必需：用于所有 POST 请求) -->
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <title>{{ title }} - Glitch God 控制台</title>
+    
+    <!-- 核心 CSS 依赖 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    
+    <!-- 谷歌字体：Orbitron (科幻) & Roboto -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@300;400&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    
+    <!-- 自定义样式表 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <style>
+        /* 登录成功后的欢迎动画遮罩层 */
+        #welcome-overlay { 
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+            background-color: var(--bg-dark-1); display: flex; justify-content: center; 
+            align-items: center; z-index: 9999; opacity: 0; pointer-events: none; 
+            transition: opacity 1s ease-out; 
+        }
+        #welcome-overlay.visible { opacity: 1; pointer-events: all; }
+        #welcome-overlay.fade-out { opacity: 0; }
+        .welcome-text { text-align: center; font-family: var(--font-primary); }
+        .welcome-text span { display: block; font-size: clamp(1.8rem, 5vw, 3.5rem); color: var(--text-primary); margin-bottom: 1rem; min-height: 1.2em; }
+        .welcome-text span.sub-text { font-family: var(--font-mono); font-size: clamp(1rem, 2.5vw, 1.5rem); color: var(--text-secondary); }
+        
+        /* 内容显示控制 */
+        .content-hidden { opacity: 0; }
+        .content-visible { opacity: 1; transition: opacity 0.5s ease-in; }
+
+        /* 头像样式 */
+        .avatar { width: 28px; height: 28px; border-radius: 50%; margin-right: 8px; border: 1px solid var(--primary-glow); }
+    </style>
+</head>
+
+<body>
+    <!-- 欢迎动画 (仅首次进入仪表盘显示) -->
+    <div id="welcome-overlay">
+        <div class="welcome-text">
+            <span id="welcome-text-main"></span>
+            <span id="welcome-text-sub" class="sub-text"></span>
+        </div>
+    </div>
+    
+    <!-- 主内容包裹器 -->
+    <div id="main-content-wrapper" class="d-flex flex-column min-vh-100 content-hidden">
+
+        <!-- 顶部导航栏 -->
+        <nav class="navbar navbar-expand-lg sticky-top">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="{{ url_for('dashboard') }}">
+                    <i class="fa-solid fa-robot"></i> Glitch God控制台
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        <!-- 仪表盘 -->
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                                <i class="fa-solid fa-gauge-high"></i> 仪表盘
+                            </a>
+                        </li>
+                        
+                        <!-- 服务器管理下拉菜单 (仅当选择了服务器且有权限时显示) -->
+                        {% if guild and user_perms %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.endpoint in ['guild_page', 'settings_page', 'moderation_page', 'tickets_page', 'music_control_page', 'announcements_page', 'channel_control_page', 'audit_core_page', 'warnings_page', 'permissions_page', 'backup_page', 'transcripts_page'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fa-solid fa-server"></i> 服务器管理
+                            </a>
+                            <ul class="dropdown-menu shadow">
+                                {% if 'page_guild_management' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'guild_page' %}active{% endif %}" href="{{ url_for('guild_page', guild_id=guild.id) }}"><i class="fa-solid fa-sliders"></i> 服务器总览</a></li>
+                                {% endif %}
+
+                                <!-- 【音乐中控台入口】 -->
+                                {% if 'tab_music' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'music_control_page' %}active{% endif %}" href="{{ url_for('music_control_page', guild_id=guild.id) }}"><i class="fa-solid fa-music"></i> 音乐点歌台</a></li>
+                                {% endif %}
+
+                                {% if 'page_settings' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'settings_page' %}active{% endif %}" href="{{ url_for('settings_page', guild_id=guild.id) }}"><i class="fa-solid fa-gears"></i> 机器人设置</a></li>
+                                {% endif %}
+
+                                {% if 'page_moderation' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'moderation_page' %}active{% endif %}" href="{{ url_for('moderation_page', guild_id=guild.id) }}"><i class="fa-solid fa-user-lock"></i> 禁言/审核</a></li>
+                                {% endif %}
+
+                                {% if 'tab_tickets' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'tickets_page' %}active{% endif %}" href="{{ url_for('tickets_page', guild_id=guild.id) }}"><i class="fa-solid fa-ticket-alt"></i> 票据系统</a></li>
+                                    <li><a class="dropdown-item {% if request.endpoint == 'transcripts_page' %}active{% endif %}" href="{{ url_for('transcripts_page', guild_id=guild.id) }}"><i class="fa-solid fa-history"></i> 聊天记录</a></li>
+                                {% endif %}
+
+                                {% if 'page_announcements' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'announcements_page' %}active{% endif %}" href="{{ url_for('announcements_page', guild_id=guild.id) }}"><i class="fa-solid fa-bullhorn"></i> 公告发布</a></li>
+                                {% endif %}
+
+                                {% if 'page_channel_control' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'channel_control_page' %}active{% endif %}" href="{{ url_for('channel_control_page', guild_id=guild.id) }}"><i class="fa-solid fa-satellite"></i> 信道控制</a></li>
+                                {% endif %}
+
+                                {% if 'page_audit_core' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'audit_core_page' %}active{% endif %}" href="{{ url_for('audit_core_page', guild_id=guild.id) }}"><i class="fa-solid fa-biohazard"></i> 内容审查</a></li>
+                                {% endif %}
+
+                                {% if 'page_warnings' in user_perms %}
+                                    <li><a class="dropdown-item {% if request.endpoint == 'warnings_page' %}active{% endif %}" href="{{ url_for('warnings_page', guild_id=guild.id) }}"><i class="fa-solid fa-triangle-exclamation"></i> 纪律协议</a></li>
+                                {% endif %}
+                                
+                                <!-- 仅服主/超级用户可见的进阶功能 -->
+                                {% if user and (user.is_superuser or (user.id|string == guild.owner_id|string)) %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item {% if request.endpoint == 'permissions_page' %}active{% endif %}" href="{{ url_for('permissions_page', guild_id=guild.id) }}"><i class="fa-solid fa-user-shield"></i> 权限管理</a></li>
+                                    <li><a class="dropdown-item {% if request.endpoint == 'backup_page' %}active{% endif %}" href="{{ url_for('backup_page', guild_id=guild.id) }}"><i class="fa-solid fa-save"></i> 备份与恢复</a></li>
+                                {% endif %}
+                            </ul>
+                        </li>
+                        {% endif %}
+                        
+                        <!-- 系统管理下拉菜单 (仅超级用户/开发者可见) -->
+                        {% if user and user.is_superuser %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.endpoint in ['superuser_accounts_page', 'bot_profile_page', 'superuser_broadcast_page'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                               <i class="fa-solid fa-user-secret"></i> 系统管理
+                            </a>
+                            <ul class="dropdown-menu shadow">
+                                <li><a class="dropdown-item {% if request.endpoint == 'superuser_accounts_page' %}active{% endif %}" href="{{ url_for('superuser_accounts_page') }}"><i class="fa-solid fa-users-cog"></i> 副账号管理</a></li>
+                                <li><a class="dropdown-item {% if request.endpoint == 'bot_profile_page' %}active{% endif %}" href="{{ url_for('bot_profile_page') }}"><i class="fa-solid fa-address-card"></i> 机器人活动状态</a></li>
+                                <li><a class="dropdown-item {% if request.endpoint == 'superuser_broadcast_page' %}active{% endif %}" href="{{ url_for('superuser_broadcast_page') }}"><i class="fa-solid fa-satellite-dish"></i> 全局广播</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
+                    </ul>
+                    
+                    <!-- 用户信息与登出按钮 -->
+                    {% if user %}
+                    <span class="navbar-text me-3 d-flex align-items-center">
+                        {% if user.avatar %}
+                            <img src="{{ user.avatar }}" class="avatar" alt="User Avatar">
+                        {% endif %}
+                        你好, <strong>{{ user.username }}</strong>
+                    </span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">
+                        <i class="fa-solid fa-right-from-bracket"></i> 登出
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </nav>
+
+        <!-- 页面主内容区域 -->
+        <main class="flex-grow-1">
+             {% block content %}{% endblock %}
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="text-center text-muted py-4 mt-auto">
+            <p>© 2026 Glitch God. 版权所有。</p>
+        </footer>
+    
+    </div>
+
+    <!-- JS 依赖库 -->
+    <!-- 必须先加载依赖，再加载自定义 main.js -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <!-- 核心 JS 文件 (单文件架构) -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

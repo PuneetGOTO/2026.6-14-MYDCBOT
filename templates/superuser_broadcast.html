@@ -1,0 +1,116 @@
+<!-- templates/superuser_broadcast.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 专属于此页面的CSS */
+    .terminal-body { 
+        background-color: #0c0d21; 
+    }
+
+    .broadcast-card {
+        background: rgba(15, 11, 26, 0.8);
+        border: 1px solid var(--danger-glow);
+        box-shadow: 0 0 30px rgba(255, 0, 85, 0.3);
+    }
+    .broadcast-card .card-header {
+        font-family: var(--font-primary);
+        color: var(--danger-glow);
+        text-shadow: 0 0 8px var(--danger-glow);
+        background-color: rgba(255, 0, 85, 0.1);
+        border-bottom-color: var(--danger-glow);
+    }
+    #broadcast-log {
+        font-family: var(--font-mono);
+        background-color: #000;
+        color: #00ffaa;
+        height: 300px;
+        overflow-y: scroll;
+        padding: 1rem;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        white-space: pre-wrap;
+        font-size: 0.85rem;
+    }
+     .log-entry { display: block; }
+    .log-error { color: var(--danger-glow); }
+    .log-warn { color: var(--warning-glow); }
+    .log-success { color: #00ffaa; }
+    .log-info { color: #ccc; }
+</style>
+
+<body data-page-id="superuser_broadcast">
+
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fas fa-satellite-dish"></i> 全局广播系统</h1>
+    <p class="text-muted">向所有服务器的所有成员发送私信。此为最高权限操作，请谨慎使用。</p>
+
+    <div class="alert alert-danger">
+        <strong><i class="fas fa-exclamation-triangle"></i> 终极警告！</strong>
+        此操作将向 **<span id="total-users-count" class="fw-bold">...</span>** 名用户发送私信。滥用此功能可能导致您的机器人被 Discord 封禁！请确保您的消息内容符合 Discord 服务条款，并且是对用户有价值的。
+    </div>
+
+    <div class="card broadcast-card">
+        <div class="card-header">广播内容配置</div>
+        <div class="card-body">
+            <form id="broadcast-form">
+                <!-- 【【【新增/修改部分】】】 -->
+                <div class="mb-3">
+                    <label class="form-label">目标服务器</label>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="broadcast-all-switch">
+                        <label class="form-check-label" for="broadcast-all-switch">广播到所有服务器</label>
+                    </div>
+                    <select class="form-select" name="target_guilds" id="target-guilds-select" multiple size="6">
+                        {% for guild in guilds %}
+                        <option value="{{ guild.id }}">{{ guild.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">按住 Ctrl (或 Mac上的 Command) 并点击以选择多个服务器进行测试或定向广播。</div>
+                </div>
+                
+
+                <div class="mb-3">
+                    <label class="form-label">广播标题</label>
+                    <input type="text" class="form-control" name="title" placeholder="例如：机器人重大更新通知！" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">广播消息内容 (支持Markdown)</label>
+                    <textarea class="form-control" name="message" rows="8" placeholder="你好 {user_name}！我们很高兴地宣布..." required></textarea>
+                    <div class="form-text">可用占位符: <code>{user_name}</code> (用户昵称), <code>{server_name}</code> (用户所在服务器名)</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">推广服务器邀请链接 (可选)</label>
+                    <div class="input-group">
+                        <select class="form-select" name="invite_guild_id" id="invite-guild-select">
+                            <option value="">不附加邀请链接</option>
+                            {% for guild in guilds %}
+                            <option value="{{ guild.id }}">{{ guild.name }}</option>
+                            {% endfor %}
+                        </select>
+                         <button class="btn btn-outline-secondary" type="button" id="generate-invite-btn" disabled>生成/更新链接</button>
+                    </div>
+                     <input type="text" class="form-control mt-2" id="invite-link-display" placeholder="选择服务器后，点击按钮生成邀请链接..." readonly>
+                </div>
+                 <div class="mb-3">
+                    <label class="form-label">广播确认</label>
+                    <input type="text" class="form-control" id="confirmation-input" placeholder="请输入 'START GLOBAL BROADCAST' 以确认" required>
+                </div>
+                <button type="submit" class="btn btn-danger w-100" id="start-broadcast-btn">
+                    <i class="fas fa-broadcast-tower"></i> 启动广播
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card broadcast-card mt-4" id="log-card" style="display: none;">
+        <div class="card-header">广播日志</div>
+        <div class="card-body">
+            <div id="broadcast-log"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</body>
+{% endblock %}

@@ -1,0 +1,49 @@
+<!-- templates/bot_profile.html (功能修复为活动状态) -->
+{% extends "base.html" %}
+
+{% block content %}
+<!-- 页面标识符，用于JS识别 -->
+<body data-page-id="bot_profile">
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fa-solid fa-gamepad"></i> 机器人活动状态设置</h1>
+    <p class="text-muted">编辑机器人状态栏中“正在玩...”后面显示的内容。此页面仅对应用开发者可见。</p>
+    
+    <div class="alert alert-info" role="alert">
+        <h4 class="alert-heading"><i class="fa-solid fa-circle-info"></i> 提示</h4>
+        <p>这里设置的内容会显示为机器人的活动状态，例如“正在玩：[你输入的内容]”。</p>
+        <hr>
+        <p class="mb-0">如果留空并保存，机器人的活动状态将重置为默认值（例如 “/help 显示帮助”）。</p>
+    </div>
+
+    <!-- 编辑表单卡片 -->
+    <div class="card">
+        <div class="card-header">编辑活动状态</div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('bot_profile_page') }}">
+                <div class="mb-3">
+                    <label for="description-textarea" class="form-label">活动状态内容</label>
+                    
+                    <textarea class="form-control" id="description-textarea" name="description" rows="5" 
+                              placeholder="在此输入机器人要显示的状态..." 
+                              {% if not is_ready %}disabled{% endif %}>{{ current_description }}</textarea>
+
+                    <div class="form-text">
+                        Discord 限制最大长度为 128 个字符。
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" {% if not is_ready %}disabled{% endif %}>
+                    <i class="fa-solid fa-save"></i> 保存更改
+                </button>
+
+                {% if not is_ready %}
+                <div class="alert alert-warning mt-3" role="alert">
+                    机器人正在启动或连接中，请稍后刷新页面再进行编辑。
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+</div>
+</body>
+{% endblock %}

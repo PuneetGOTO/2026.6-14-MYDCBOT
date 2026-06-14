@@ -1,0 +1,361 @@
+<!-- templates/login.html (完整独立登录页) -->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* === 0. 全局重置与覆盖 === */
+    /* 强制隐藏 base.html 可能带来的导航栏和页脚 */
+    nav.navbar, footer { display: none !important; }
+    #main-content-wrapper { padding: 0 !important; margin: 0 !important; }
+
+    /* === 1. 页面核心样式 === */
+    body {
+        background-color: #050505;
+        /* 深空网格背景 */
+        background-image: 
+            linear-gradient(rgba(147, 112, 219, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(147, 112, 219, 0.05) 1px, transparent 1px);
+        background-size: 50px 50px;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden; /* 禁止滚动 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Roboto Mono', monospace;
+    }
+
+    /* 粒子画布 */
+    #particles-js {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 0;
+    }
+
+    /* === 2. 登录卡片设计 === */
+    .login-wrapper {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 420px;
+        padding: 20px;
+    }
+
+    .login-card {
+        background: rgba(18, 18, 28, 0.65);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(147, 112, 219, 0.3);
+        border-radius: 12px;
+        padding: 2.5rem 2rem;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(147, 112, 219, 0.05);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        animation: cardEntry 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    /* 顶部光效装饰 */
+    .login-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 3px;
+        background: linear-gradient(90deg, transparent, #9370DB, transparent);
+        box-shadow: 0 0 15px #9370DB;
+    }
+
+    @keyframes cardEntry {
+        from { opacity: 0; transform: translateY(30px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* 文字样式 */
+    .brand-title {
+        font-family: 'Orbitron', sans-serif;
+        color: #fff;
+        font-size: 1.8rem;
+        margin-bottom: 0.5rem;
+        letter-spacing: 3px;
+        text-shadow: 0 0 10px rgba(147, 112, 219, 0.6);
+    }
+    
+    .brand-subtitle {
+        color: #8b949e;
+        font-size: 0.85rem;
+        margin-bottom: 2rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* === 3. 表单元素 === */
+    /* Discord 按钮 */
+    .btn-discord {
+        background-color: #5865F2;
+        color: white;
+        font-weight: 700;
+        width: 100%;
+        padding: 12px;
+        border-radius: 6px;
+        border: none;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
+        margin-bottom: 1.5rem;
+    }
+    .btn-discord:hover {
+        background-color: #4752C4;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(88, 101, 242, 0.5);
+        color: white;
+    }
+
+    /* 分隔线 */
+    .divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        margin: 1.5rem 0;
+        color: rgba(255,255,255,0.2);
+        font-size: 0.8rem;
+    }
+    .divider::before, .divider::after {
+        content: ''; flex: 1; border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .divider::before { margin-right: .5em; }
+    .divider::after { margin-left: .5em; }
+
+    /* 输入框 */
+    .form-control-custom {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #fff;
+        padding: 10px 15px;
+        font-family: 'Roboto Mono', monospace;
+        font-size: 0.9rem;
+    }
+    .form-control-custom:focus {
+        background: rgba(0, 0, 0, 0.6);
+        border-color: #9370DB;
+        box-shadow: 0 0 15px rgba(147, 112, 219, 0.2);
+        color: #fff;
+    }
+    .form-control-custom::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+    .btn-submit {
+        background: transparent;
+        border: 1px solid #9370DB;
+        color: #9370DB;
+        transition: all 0.3s;
+    }
+    .btn-submit:hover {
+        background: #9370DB;
+        color: #fff;
+        box-shadow: 0 0 15px #9370DB;
+    }
+
+    /* 底部链接 */
+    .back-link {
+        display: inline-block;
+        margin-top: 1.5rem;
+        color: #666;
+        text-decoration: none;
+        font-size: 0.8rem;
+        transition: color 0.3s;
+    }
+    .back-link:hover { color: #9370DB; }
+
+    /* 开发者折叠区域 */
+    .dev-toggle {
+        color: #444; font-size: 0.75rem; text-decoration: none; display: block; margin-top: 10px; transition: color 0.3s;
+    }
+    .dev-toggle:hover { color: #dc3545; } /* 红色警告色 */
+</style>
+
+<!-- 粒子背景 -->
+<canvas id="particles-js"></canvas>
+
+<div class="login-wrapper">
+    <div class="login-card">
+        <!-- 头部 -->
+        <div class="mb-4">
+            <i class="fa-solid fa-fingerprint" style="font-size: 2.5rem; color: #9370DB; margin-bottom: 1rem;"></i>
+            <h1 class="brand-title">ACCESS</h1>
+            <p class="brand-subtitle">Glitch God 控制台接入点</p>
+        </div>
+
+        <!-- 错误提示 Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} small py-2 mb-3 border-0" style="background: rgba(255,50,50,0.15); color: #ff6b6b; text-align: left;">
+                        <i class="fa-solid fa-circle-exclamation me-2"></i> {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- 1. Discord 登录 (主要) -->
+        <a href="{{ oauth_url }}" 
+           id="discord-login-btn"
+           class="btn btn-discord" 
+           data-bs-toggle="modal" 
+           data-bs-target="#termsModal"
+           data-auth-url="{{ oauth_url }}">
+            <i class="fa-brands fa-discord" style="font-size: 1.2rem;"></i> 管理员授权登录
+        </a>
+
+        <div class="divider">OR</div>
+
+        <!-- 2. 副账号登录 (Access Key) -->
+        <form method="POST" action="{{ url_for('sub_account_login') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group mb-3">
+                <span class="input-group-text" style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.1); color:#888;">
+                    <i class="fa-solid fa-key"></i>
+                </span>
+                <input type="password" class="form-control form-control-custom" name="access_key" placeholder="输入协作者密钥..." required>
+                <button type="submit" class="btn btn-submit"><i class="fa-solid fa-arrow-right"></i></button>
+            </div>
+        </form>
+
+        <!-- 3. 返回首页 -->
+        <a href="{{ url_for('index') }}" class="back-link">
+            <i class="fa-solid fa-chevron-left me-1"></i> 返回官网首页
+        </a>
+
+        <!-- 4. 开发者入口 (隐蔽) -->
+        <div class="mt-2">
+            <a href="#superuserCollapse" data-bs-toggle="collapse" class="dev-toggle">
+                [ DEV ROOT ]
+            </a>
+            <div class="collapse mt-2" id="superuserCollapse">
+                <div class="card card-body p-2" style="background: rgba(0,0,0,0.5); border: 1px dashed #dc3545;">
+                    <form method="POST" action="{{ url_for('superuser_login') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="input-group input-group-sm">
+                            <input type="password" class="form-control form-control-custom" name="password" placeholder="Root Password..." style="border-color: #dc3545; color: #ff6b6b;" required>
+                            <button type="submit" class="btn btn-outline-danger"><i class="fa-solid fa-terminal"></i></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 条款模态框 -->
+<div class="modal fade" id="termsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background: #1a1a24; border: 1px solid #9370DB; box-shadow: 0 0 30px rgba(147,112,219,0.2);">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-light"><i class="fa-solid fa-file-contract me-2"></i>服务协议</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-secondary small">
+                <p>欢迎使用 Glitch God 控制台。请确认：</p>
+                <ul class="ps-3 mb-0">
+                    <li class="mb-1">您拥有所管理服务器的合法权限。</li>
+                    <li class="mb-1">禁止利用本工具进行恶意破坏或滥用经济系统。</li>
+                    <li>所有关键操作（踢人、封禁、转账等）将被审计记录。</li>
+                </ul>
+            </div>
+            <div class="modal-footer border-secondary p-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-sm btn-primary" id="agree-terms-btn" style="background: #9370DB; border:none;">同意并登录</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 粒子背景逻辑
+    const canvas = document.getElementById('particles-js');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        let particlesArray;
+        
+        const setSize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+        
+        class Particle {
+            constructor() { 
+                this.x = Math.random() * canvas.width; 
+                this.y = Math.random() * canvas.height; 
+                this.size = Math.random() * 2; 
+                this.speedX = (Math.random() * 0.5) - 0.25; 
+                this.speedY = (Math.random() * 0.5) - 0.25; 
+            }
+            update() { 
+                this.x += this.speedX; this.y += this.speedY; 
+                if (this.x > canvas.width) this.x = 0; else if (this.x < 0) this.x = canvas.width;
+                if (this.y > canvas.height) this.y = 0; else if (this.y < 0) this.y = canvas.height;
+            }
+            draw() { 
+                ctx.fillStyle = 'rgba(147, 112, 219, 0.4)'; 
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); 
+            }
+        }
+        
+        function init() { particlesArray = []; for (let i = 0; i < 60; i++) particlesArray.push(new Particle()); }
+        
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < particlesArray.length; i++) {
+                particlesArray[i].update();
+                particlesArray[i].draw();
+                // 连线效果
+                for (let j = i; j < particlesArray.length; j++) {
+                    const dx = particlesArray[i].x - particlesArray[j].x;
+                    const dy = particlesArray[i].y - particlesArray[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 120) {
+                        ctx.beginPath();
+                        ctx.strokeStyle = `rgba(147, 112, 219, ${1 - dist/120})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.moveTo(particlesArray[i].x, particlesArray[i].y);
+                        ctx.lineTo(particlesArray[j].x, particlesArray[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+        
+        window.addEventListener('resize', () => { setSize(); init(); });
+        setSize(); init(); animate();
+    }
+
+    // 条款同意逻辑
+    document.addEventListener('DOMContentLoaded', () => {
+        const discordLoginBtn = document.getElementById('discord-login-btn');
+        const termsModalEl = document.getElementById('termsModal');
+        const termsModal = new bootstrap.Modal(termsModalEl);
+        const agreeBtn = document.getElementById('agree-terms-btn');
+        const termsAgreedKey = 'userHasAgreedToTerms_v1';
+
+        if (discordLoginBtn) {
+            discordLoginBtn.addEventListener('click', (event) => {
+                if (localStorage.getItem(termsAgreedKey) === 'true') {
+                    window.location.href = discordLoginBtn.dataset.authUrl;
+                } else {
+                    event.preventDefault();
+                    termsModal.show();
+                }
+            });
+        }
+
+        if (agreeBtn) {
+            agreeBtn.addEventListener('click', () => {
+                localStorage.setItem(termsAgreedKey, 'true');
+                termsModal.hide();
+                setTimeout(() => {
+                    if (discordLoginBtn) window.location.href = discordLoginBtn.dataset.authUrl;
+                }, 200);
+            });
+        }
+    });
+</script>
+{% endblock %}

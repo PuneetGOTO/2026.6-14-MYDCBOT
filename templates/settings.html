@@ -1,0 +1,440 @@
+<!-- templates/settings.html (完整版 - 含日志配置) -->
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 页面专属样式 */
+    .department-card {
+        transition: all 0.2s ease-in-out;
+        border-left: 4px solid var(--primary-glow);
+    }
+    .department-card:hover {
+        border-color: var(--secondary-glow);
+        box-shadow: 0 0 15px rgba(var(--primary-glow-rgb), 0.2);
+        transform: translateY(-2px);
+    }
+</style>
+
+<body data-page-id="settings" data-guild-id="{{ guild.id }}">
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fa-solid fa-gears"></i> 机器人设置 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">配置服务器特定的机器人功能，如票据系统、日志记录、临时语音频道等。</p>
+
+    <!-- 导航标签 -->
+    <ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tickets-settings-tab" data-bs-toggle="tab" data-bs-target="#tickets-settings-pane" type="button" role="tab">
+                <i class="fa-solid fa-ticket me-1"></i>票据系统
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="channels-settings-tab" data-bs-toggle="tab" data-bs-target="#channels-settings-pane" type="button" role="tab">
+                <i class="fa-solid fa-sliders me-1"></i>频道 & 其他
+            </button>
+        </li>
+    </ul>
+
+    <!-- 标签页内容 -->
+    <div class="tab-content" id="settingsTabsContent">
+        
+        <!-- ==========================
+             1. 票据系统设置标签页 
+             ========================== -->
+        <div class="tab-pane fade show active" id="tickets-settings-pane" role="tabpanel">
+            <div class="row g-4">
+                <!-- 左侧：部署与核心设置 -->
+                <div class="col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="fa-solid fa-rocket"></i> 部署与核心设置</div>
+                        <div class="card-body">
+                            <form id="ticket-deploy-form">
+                                <div class="mb-3">
+                                    <label class="form-label">票据创建分类</label>
+                                    <select class="form-select" name="ticket_category_id" required>
+                                        <option value="">选择新票据将被创建在哪个分类...</option>
+                                        {% for c in categories %}
+                                        <option value="{{ c.id }}" {% if settings.ticket.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text">所有新创建的票据都会出现在这个分类下。</div>
+                                </div>
+                                <hr>
+                                <div class="mb-3">
+                                    <label class="form-label">面板部署频道</label>
+                                    <select class="form-select" name="panel_channel_id" required>
+                                        <option value="">选择一个频道来发送“创建票据”面板...</option>
+                                        {% for c in text_channels %}
+                                        <option value="{{ c.id }}" {% if settings.ticket.panel_channel_id == c.id %}selected{% endif %}>#{{ c.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="d-grid">
+                                    <button type="button" id="deploy-ticket-panel-btn" class="btn btn-success"><i class="fa-solid fa-paper-plane me-2"></i>保存并部署面板</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：部门管理 -->
+                <div class="col-lg-8">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-building-user"></i> 票据系统部门</span>
+                            <button class="btn btn-primary btn-sm" id="add-new-department-btn"><i class="fa-solid fa-plus me-1"></i>新建部门</button>
+                        </div>
+                        <div class="card-body" style="max-height: 70vh; overflow-y: auto;">
+                            <div id="departments-list-container">
+                                <p class="text-muted text-center p-5">
+                                    <span class="spinner-border spinner-border-sm"></span> 正在加载部门...
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================
+             2. 频道与其他设置标签页 
+             ========================== -->
+        <div class="tab-pane fade" id="channels-settings-pane" role="tabpanel">
+            <div class="row g-4">
+                
+                <!-- 临时语音频道 -->
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="fa-solid fa-microphone-lines"></i> 临时语音频道配置</div>
+                        <div class="card-body">
+                            <form id="temp-vc-settings-form">
+                                <div class="mb-3">
+                                    <label class="form-label">母频道 (入口)</label>
+                                    <select class="form-select" name="master_channel_id" required>
+                                        <option value="">选择语音频道...</option>
+                                        {% for vc in voice_channels %}
+                                        <option value="{{ vc.id }}" {% if settings.temp_vc.master_channel_id == vc.id %}selected{% endif %}>{{ vc.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text">用户加入此频道后，机器人会为其创建一个新的临时频道。</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">生成分类</label>
+                                    <select class="form-select" name="category_id">
+                                        <option value="">-- 自动 (与母频道相同) --</option>
+                                        {% for cat in categories %}
+                                        <option value="{{ cat.id }}" {% if settings.temp_vc.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-primary">保存临时语音设置</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 【新增】公共日志配置 -->
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="fa-solid fa-file-signature"></i> 公共日志配置</div>
+                        <div class="card-body">
+                            <form id="general-log-settings-form">
+                                <div class="mb-3">
+                                    <label class="form-label">日志频道</label>
+                                    <select class="form-select" name="log_channel_id">
+                                        <option value="">-- 不发送日志 --</option>
+                                        {% for c in text_channels %}
+                                        <!-- 注意：这里使用了 settings.general -->
+                                        <option value="{{ c.id }}" {% if settings.general and settings.general.log_channel_id|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text">警告、踢出、封禁、解封等操作记录将发送到此频道。</div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">保存日志设置</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 机器人白名单 (仅管理员/服主) -->
+                {% if is_owner or user.is_superuser %}
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="fa-solid fa-shield-halved"></i> 机器人白名单 (防Bot轰炸)</div>
+                        <div class="card-body">
+                            <form id="bot-whitelist-form" class="input-group mb-3">
+                                <input type="text" class="form-control" name="bot_id" placeholder="输入机器人ID (纯数字)" required>
+                                <button type="submit" class="btn btn-success">添加</button>
+                            </form>
+                            <div class="bg-dark rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                <ul class="list-group list-group-flush" id="bot-whitelist">
+                                    <li class="list-group-item bg-transparent text-muted">正在加载...</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- AI 频道管理 -->
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header"><i class="fa-solid fa-brain"></i> AI 对话频道</div>
+                        <div class="card-body">
+                            <form id="ai-dep-form" class="input-group mb-3">
+                                <select class="form-select" name="channel_id" required>
+                                    <option value="" disabled selected>选择一个频道设为AI频道...</option>
+                                    {% for c in text_channels %}
+                                    <option value="{{ c.id }}">#{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-success">添加</button>
+                            </form>
+                            <div class="bg-dark rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                <ul class="list-group list-group-flush" id="ai-dep-list">
+                                    <li class="list-group-item bg-transparent text-muted">正在加载...</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 部门编辑模态框 -->
+<div class="modal fade" id="departmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="departmentModalLabel">编辑部门</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="department-form">
+                    <input type="hidden" name="department_id">
+                    <div class="mb-3">
+                        <label class="form-label">部门名称</label>
+                        <input type="text" class="form-control" name="name" required placeholder="例如：技术支持">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">部门描述</label>
+                        <input type="text" class="form-control" name="description" placeholder="（可选）显示在下拉菜单中">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label">按钮/菜单标签</label>
+                            <input type="text" class="form-control" name="button_label" placeholder="（可选）默认为部门名称">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">按钮/菜单 Emoji</label>
+                            <input type="text" class="form-control" name="button_emoji" placeholder="（可选）粘贴一个表情符号">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">员工身份组 (按住 Ctrl/Cmd 多选)</label>
+                        <select class="form-select" name="staff_role_ids" multiple required size="6">
+                            {% for r in roles %}<option value="{{ r.id }}">@{{ r.name }}</option>{% endfor %}
+                        </select>
+                        <div class="form-text">只有拥有这些身份组的成员才能看到并处理该部门的票据。</div>
+                    </div>
+                    <hr>
+                    <h6 class="text-muted"><i class="fa-solid fa-message"></i> 票据内欢迎消息 (可选)</h6>
+                    <p class="small text-muted">可用占位符: <code>{user}</code> (提问者) 和 <code>{staff_roles}</code> (员工组提及)</p>
+                    <div class="mb-3">
+                         <label class="form-label">标题</label>
+                         <input type="text" class="form-control" name="welcome_title" placeholder="例如：欢迎来到技术支持！">
+                    </div>
+                     <div class="mb-3">
+                         <label class="form-label">描述内容</label>
+                         <textarea class="form-control" name="welcome_description" rows="5" placeholder="你好 {user}！请详细描述您的问题，{staff_roles} 会尽快回复。"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary" form="department-form">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 内联脚本：专门处理部门管理的动态逻辑
+// 其他简单表单的提交由 main.js 的通用处理器接管
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.body.dataset.pageId !== 'settings') return;
+
+    const GUILD_ID = document.body.dataset.guildId;
+    const departmentModal = new bootstrap.Modal(document.getElementById('departmentModal'));
+    const departmentForm = document.getElementById('department-form');
+    const departmentsContainer = document.getElementById('departments-list-container');
+    const deployBtn = document.getElementById('deploy-ticket-panel-btn');
+    const deployForm = document.getElementById('ticket-deploy-form');
+
+    // 渲染部门列表
+    const renderDepartments = (departments) => {
+        if (!departments || departments.length === 0) {
+            departmentsContainer.innerHTML = '<div class="text-center p-5 border border-secondary border-dashed rounded text-muted"><i class="fa-solid fa-folder-open fa-2x mb-3"></i><p>还没有创建任何部门。<br>点击右上角“新建部门”开始配置。</p></div>';
+            return;
+        }
+        departmentsContainer.innerHTML = departments.map(dept => {
+            const roleOptions = departmentForm.querySelectorAll('[name="staff_role_ids"] option');
+            const roles = (dept.staff_role_ids || []).map(rid => {
+                const option = Array.from(roleOptions).find(opt => opt.value == rid);
+                return option ? `<span class="badge bg-secondary me-1">@${option.textContent.replace('@','')}</span>` : '';
+            }).join('');
+            
+            return `
+            <div class="card department-card mb-3" data-department-id="${dept.department_id}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title text-primary mb-1">
+                                ${dept.button_emoji ? dept.button_emoji + ' ' : ''}${escapeHtml(dept.name)}
+                                <small class="text-muted ms-2" style="font-size: 0.6em;">ID: ${dept.department_id}</small>
+                            </h5>
+                            <p class="card-text text-muted small mb-2">${escapeHtml(dept.description || '无描述')}</p>
+                            <div class="mb-1">${roles || '<span class="text-warning small">未设置员工</span>'}</div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-info edit-department-btn"><i class="fa-solid fa-pen"></i></button>
+                            <button class="btn btn-sm btn-outline-danger delete-department-btn"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    };
+
+    // 获取所有部门数据
+    async function fetchDepartments() {
+        try {
+            const data = await apiRequest(`/api/guild/${GUILD_ID}/ticket_departments`);
+            if (data.status === 'success') {
+                renderDepartments(data.departments);
+            }
+        } catch(e) {
+            departmentsContainer.innerHTML = `<p class="text-danger text-center p-3">加载部门失败: ${e.message}</p>`;
+        }
+    }
+    
+    // 打开模态框 (新建或编辑)
+    const openDepartmentModal = (dept = null) => {
+        departmentForm.reset();
+        // 清除多选框选择
+        Array.from(departmentForm.querySelector('[name="staff_role_ids"]').options).forEach(opt => opt.selected = false);
+
+        if (dept) { // 编辑
+            document.getElementById('departmentModalLabel').textContent = `编辑部门: ${dept.name}`;
+            departmentForm.querySelector('[name="department_id"]').value = dept.department_id;
+            departmentForm.querySelector('[name="name"]').value = dept.name;
+            departmentForm.querySelector('[name="description"]').value = dept.description || '';
+            departmentForm.querySelector('[name="button_label"]').value = dept.button_label || '';
+            departmentForm.querySelector('[name="button_emoji"]').value = dept.button_emoji || '';
+            
+            const staffRolesSelect = departmentForm.querySelector('[name="staff_role_ids"]');
+            Array.from(staffRolesSelect.options).forEach(opt => {
+                if ((dept.staff_role_ids || []).includes(parseInt(opt.value))) {
+                    opt.selected = true;
+                }
+            });
+
+            const welcomeMsg = dept.welcome_message || {};
+            departmentForm.querySelector('[name="welcome_title"]').value = welcomeMsg.title || '';
+            departmentForm.querySelector('[name="welcome_description"]').value = welcomeMsg.description || '';
+        } else { // 新建
+            document.getElementById('departmentModalLabel').textContent = '创建新部门';
+            departmentForm.querySelector('[name="department_id"]').value = '';
+        }
+        departmentModal.show();
+    }
+    
+    // 事件监听
+    document.getElementById('add-new-department-btn').addEventListener('click', () => openDepartmentModal());
+    
+    departmentsContainer.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const card = btn.closest('.department-card');
+        const deptId = card.dataset.departmentId;
+
+        if (btn.classList.contains('edit-department-btn')) {
+            apiRequest(`/api/guild/${GUILD_ID}/ticket_departments`).then(data => {
+                const deptData = data.departments.find(d => String(d.department_id) === deptId);
+                if (deptData) openDepartmentModal(deptData);
+            });
+        }
+        if (btn.classList.contains('delete-department-btn')) {
+            if (confirm(`确定要删除这个部门吗？相关数据可能丢失。`)) {
+                apiRequest(`/api/guild/${GUILD_ID}/ticket_department/${deptId}`, { method: 'DELETE' })
+                .then(data => {
+                    alert(data.message);
+                    if (data.status === 'success') fetchDepartments();
+                });
+            }
+        }
+    });
+
+    departmentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(departmentForm);
+        const payload = {
+            department_id: formData.get('department_id') || null,
+            name: formData.get('name'),
+            description: formData.get('description'),
+            button_label: formData.get('button_label'),
+            button_emoji: formData.get('button_emoji'),
+            staff_role_ids: formData.getAll('staff_role_ids'),
+            welcome_message: {
+                title: formData.get('welcome_title'),
+                description: formData.get('welcome_description')
+            }
+        };
+        
+        try {
+            const data = await apiRequest(`/api/guild/${GUILD_ID}/ticket_departments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            alert(data.message);
+            if (data.status === 'success') {
+                departmentModal.hide();
+                fetchDepartments();
+            }
+        } catch (error) {}
+    });
+
+    deployBtn.addEventListener('click', async () => {
+        if (!confirm('这将保存核心设置，并在指定频道发送一个新的票据面板。确定吗？')) return;
+        
+        const categoryId = deployForm.querySelector('[name="ticket_category_id"]').value;
+        const panelChannelId = deployForm.querySelector('[name="panel_channel_id"]').value;
+
+        if (!categoryId || !panelChannelId) {
+            alert('请先选择“票据创建分类”和“面板部署频道”。');
+            return;
+        }
+
+        try {
+            const data = await apiRequest(`/api/guild/${GUILD_ID}/action/deploy_ticket_panel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    panel_channel_id: panelChannelId,
+                    ticket_category_id: categoryId
+                })
+            });
+             alert(data.message);
+        } catch (error) {}
+    });
+
+    // 初始化加载
+    fetchDepartments();
+});
+</script>
+
+</body>
+{% endblock %}

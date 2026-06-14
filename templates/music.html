@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* === 音乐页面专属样式 === */
+    
+    /* 封面旋转动画 */
+    .music-cover {
+        width: 180px; height: 180px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 5px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 25px rgba(138, 43, 226, 0.3);
+        transition: transform 0.5s linear;
+        margin: 0 auto;
+        display: block;
+    }
+    
+    .playing-anim { 
+        animation: spin 12s linear infinite; 
+    }
+    
+    @keyframes spin { 
+        100% { transform: rotate(360deg); } 
+    }
+
+    /* 播放器卡片 */
+    .player-card {
+        background: linear-gradient(145deg, rgba(30,30,40,0.9), rgba(20,20,30,0.95));
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        overflow: hidden;
+        position: relative;
+        min-height: 520px;
+    }
+    
+    /* 动态背景模糊效果 */
+    .player-bg-blur {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-size: cover; background-position: center;
+        filter: blur(40px) brightness(0.4); 
+        z-index: 0; 
+        opacity: 0.5;
+        transition: background-image 0.5s ease;
+    }
+    
+    .player-content { 
+        position: relative; 
+        z-index: 1; 
+        height: 100%;
+    }
+
+    /* 队列列表容器 */
+    .queue-card {
+        background-color: var(--bg-dark-2);
+        border: 1px solid var(--border-color);
+        height: 100%;
+        min-height: 520px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .queue-list {
+        flex-grow: 1;
+        overflow-y: auto;
+        background: rgba(0,0,0,0.2);
+        padding: 0;
+    }
+
+    .queue-item {
+        padding: 12px 15px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        display: flex; 
+        align-items: center;
+        transition: background 0.2s;
+    }
+    
+    .queue-item:hover { 
+        background: rgba(255,255,255,0.08); 
+    }
+    
+    .queue-item:last-child {
+        border-bottom: none;
+    }
+
+    /* 音量条自定义 */
+    .form-range::-webkit-slider-thumb { 
+        background: var(--primary-glow); 
+        box-shadow: 0 0 10px var(--primary-glow);
+    }
+    .form-range::-webkit-slider-runnable-track { 
+        background: rgba(255,255,255,0.1); 
+    }
+    
+    /* 按钮特效 */
+    .btn-control {
+        transition: all 0.2s;
+    }
+    .btn-control:hover {
+        transform: scale(1.1);
+        box-shadow: 0 0 15px rgba(147, 112, 219, 0.4);
+    }
+</style>
+
+<!-- 
+    data-page-id="music_control": 告诉 main.js 初始化音乐逻辑
+    data-guild-id: 告诉 JS 当前操作哪个服务器
+-->
+<body data-page-id="music_control" data-guild-id="{{ guild.id }}">
+
+<div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2"><i class="fa-solid fa-music"></i> 音乐控制台 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+        
+        <!-- 右上角手动加入控制区 -->
+        <div class="d-flex gap-2 align-items-center">
+            <!-- 语音频道选择器 -->
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-dark border-secondary text-secondary"><i class="fa-solid fa-tower-broadcast"></i></span>
+                <select class="form-select bg-dark border-secondary text-light" id="manual-voice-select" style="max-width: 150px;">
+                    <option value="" selected disabled>选择频道...</option>
+                    {% for vc in voice_channels %}
+                    <option value="{{ vc.id }}">{{ vc.name }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-outline-success" type="button" id="btn-manual-join" title="让机器人加入选中的频道">
+                    加入
+                </button>
+            </div>
+            
+            <!-- Socket 连接状态图标 -->
+            <div class="badge bg-dark border border-secondary p-2" title="实时连接状态">
+                <i class="fa-solid fa-bolt" id="socket-status-icon" style="color: grey;"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- 左侧：播放器核心控制区 -->
+        <div class="col-lg-5">
+            <div class="player-card shadow-lg h-100">
+                <!-- 动态背景层 -->
+                <div id="player-bg" class="player-bg-blur"></div>
+                
+                <div class="player-content card-body text-center p-4 d-flex flex-column justify-content-center">
+                    <!-- 封面与状态徽章 -->
+                    <div class="mb-4 position-relative">
+                        <img src="https://cdn.discordapp.com/embed/avatars/0.png" id="music-cover" class="music-cover" alt="Album Art">
+                        
+                        <!-- 循环模式徽章 -->
+                        <span id="loop-badge" class="position-absolute top-0 start-50 translate-middle badge rounded-pill bg-secondary" style="opacity:0; transition: opacity 0.3s;">
+                            Loop: Off
+                        </span>
+                    </div>
+
+                    <!-- 歌曲信息 -->
+                    <h3 id="music-title" class="text-white fw-bold text-truncate px-3 mb-1">未在播放</h3>
+                    <p id="music-artist" class="text-muted small mb-4">--</p>
+
+                    <!-- 控制按钮组 -->
+                    <div class="d-flex justify-content-center align-items-center gap-4 mb-5">
+                        <!-- 循环切换 -->
+                        <button class="btn btn-outline-secondary rounded-circle p-3 btn-control" id="btn-loop" title="切换循环模式">
+                            <i class="fa-solid fa-repeat"></i>
+                        </button>
+                        
+                        <!-- 停止清空 -->
+                        <button class="btn btn-outline-danger rounded-circle p-3 btn-control" id="btn-stop" title="停止并清空">
+                            <i class="fa-solid fa-stop"></i>
+                        </button>
+                        
+                        <!-- 播放状态图标 (仅展示) -->
+                        <button class="btn btn-primary rounded-circle p-4 shadow-sm btn-control" style="width:75px; height:75px; font-size: 1.5rem;" id="btn-play-state">
+                            <i class="fa-solid fa-play" id="icon-play-state"></i>
+                        </button>
+                        
+                        <!-- 跳过 -->
+                        <button class="btn btn-outline-light rounded-circle p-3 btn-control" id="btn-skip" title="跳过当前歌曲">
+                            <i class="fa-solid fa-forward-step"></i>
+                        </button>
+                    </div>
+
+                    <!-- 音量控制 -->
+                    <div class="px-4 mt-auto">
+                        <label class="form-label d-flex justify-content-between text-white-50 small mb-2">
+                            <span><i class="fa-solid fa-volume-low"></i></span>
+                            <span id="vol-display">30%</span>
+                            <span><i class="fa-solid fa-volume-high"></i></span>
+                        </label>
+                        <input type="range" class="form-range" id="vol-slider" min="0" max="150" value="30">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：点歌与播放队列 -->
+        <div class="col-lg-7">
+            <div class="card queue-card shadow-sm">
+                <!-- 搜索/点歌栏 -->
+                <div class="card-header border-secondary bg-transparent py-3">
+                    <div class="input-group mb-2">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="fa-brands fa-soundcloud"></i></span>
+                        <input type="text" id="search-input" class="form-control bg-dark border-secondary text-white" placeholder="粘贴链接 (YouTube/SoundCloud) 或输入歌名...">
+                        <button class="btn btn-primary" id="btn-search">
+                            <i class="fa-solid fa-plus me-1"></i> 点歌
+                        </button>
+                    </div>
+                    <!-- 新增：歌单操作栏 -->
+                    <div class="d-flex justify-content-between">
+                        <button class="btn btn-sm btn-outline-warning" id="btn-save-playlist">
+                            <i class="fa-solid fa-floppy-disk me-1"></i> 保存当前队列为歌单
+                        </button>
+                        <button class="btn btn-sm btn-outline-info" id="btn-view-playlists" data-bs-toggle="modal" data-bs-target="#playlistModal">
+                            <i class="fa-solid fa-list me-1"></i> 我的歌单
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 队列头部 -->
+                <div class="p-3 border-bottom border-secondary bg-dark bg-opacity-50 d-flex justify-content-between text-muted small">
+                    <span class="fw-bold"><i class="fa-solid fa-list-ol me-2"></i> 播放队列</span>
+                    <span id="queue-count">0 首歌曲</span>
+                </div>
+                
+                <!-- 队列列表内容 -->
+                <div id="queue-container" class="queue-list custom-scrollbar">
+                    <!-- JS 将在这里动态插入 .queue-item -->
+                    <div class="text-center text-muted mt-5 pt-5 opacity-50">
+                        <i class="fa-solid fa-music fa-4x mb-3"></i>
+                        <p>队列空空如也，快去点歌吧！</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 歌单管理模态框 -->
+<div class="modal fade" id="playlistModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background-color: var(--bg-dark-2); border: 1px solid var(--border-color);">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i class="fa-solid fa-compact-disc me-2"></i>我的歌单库</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="playlist-list-container" class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;">
+                    <!-- JS 动态填充 -->
+                    <div class="text-center p-4 text-muted">加载中...</div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <small class="text-muted me-auto">点击播放按钮加载歌单</small>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 引入 Socket.IO 客户端库 -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+<!-- 简单的 Socket 状态指示脚本 (主要逻辑在 main.js) -->
+<script>
+    const socketIcon = document.getElementById('socket-status-icon');
+    if(typeof io !== 'undefined') {
+        const socketCheck = io({ transports: ['websocket'], path: '/my-custom-socket-path' });
+        socketCheck.on('connect', () => {
+            if(socketIcon) {
+                socketIcon.style.color = '#00ffaa'; // Green
+                socketIcon.title = "已连接实时服务器";
+            }
+        });
+        socketCheck.on('disconnect', () => {
+            if(socketIcon) {
+                socketIcon.style.color = '#ff5555'; // Red
+                socketIcon.title = "连接已断开";
+            }
+        });
+    }
+</script>
+
+</body>
+{% endblock %}

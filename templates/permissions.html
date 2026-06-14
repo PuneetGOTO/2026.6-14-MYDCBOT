@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .perm-group { margin-left: 20px; }
+    .perm-group .form-check { padding-left: 2.5em; }
+</style>
+<body data-page-id="permissions" data-guild-id="{{ guild.id }}">
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fas fa-user-shield"></i> Web面板权限管理 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">为服务器内的不同身份组分配Web面板的页面及标签页访问权限。</p>
+
+    <div class="row">
+        <div class="col-lg-5 mb-4">
+            <div class="card">
+                <div class="card-header">创建/编辑权限组</div>
+                <div class="card-body">
+                    <form id="permission-group-form">
+                        <input type="hidden" name="editing_role_id" id="editing_role_id" value="">
+                        <div class="mb-3">
+                            <label for="role-select" class="form-label">目标Discord身份组</label>
+                            <select class="form-select" id="role-select" name="role_id" required>
+                                <option value="" selected disabled>选择一个身份组...</option>
+                                {% for role in roles %}
+                                <option value="{{ role.id }}">@{{ role.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">可访问的模块</label>
+                            <!-- 【核心修改】使用循环生成复选框 -->
+                            {% for perm_id, perm_data in available_permissions.items() %}
+                                {% if perm_id != 'page_permissions' %} {# 权限管理页面不对外授权 #}
+                                <div class="form-check">
+                                    <input class="form-check-input parent-permission" type="checkbox" value="{{ perm_id }}" id="perm_{{ perm_id }}" name="permissions">
+                                    <label class="form-check-label fw-bold" for="perm_{{ perm_id }}">{{ perm_data.name }}</label>
+                                </div>
+                                    {% if perm_data.tabs %}
+                                    <div class="perm-group ms-4 mt-1 mb-2">
+                                        {% for tab_id, tab_name in perm_data.tabs.items() %}
+                                        <div class="form-check">
+                                            <input class="form-check-input child-permission" type="checkbox" value="{{ tab_id }}" id="perm_{{ tab_id }}" name="permissions" data-parent="perm_{{ perm_id }}">
+                                            <label class="form-check-label" for="perm_{{ tab_id }}">{{ tab_name }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        <div class="d-grid gap-2">
+                             <button type="submit" class="btn btn-primary" id="save-perm-btn">保存权限组</button>
+                             <button type="button" class="btn btn-secondary" id="cancel-edit-btn" style="display: none;">取消编辑</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header">已创建的权限组</div>
+                <div class="card-body">
+                    <div class="list-group" id="permission-groups-list">
+                        <!-- JS会在这里填充列表 -->
+                        <p class="text-muted text-center">正在加载权限组...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+{% endblock %}

@@ -1,0 +1,274 @@
+<!-- templates/guild.html (完整版 - 包含音乐入口) -->
+{% extends "base.html" %}
+
+{% block content %}
+
+<!-- 隐藏的数据源，用于JS交互 -->
+<div class="d-none">
+    <!-- 存储所有可用身份组，供JS动态填充下拉菜单 -->
+    <select id="guild-page-all-roles-source">
+        {% for r in roles %}
+        <option value="{{ r.id }}">@{{ r.name }}</option>
+        {% endfor %}
+    </select>
+    
+    <!-- 将后端权限字典传递给前端JS -->
+    <script id="discord-permissions-json" type="application/json">
+        {{ DISCORD_PERMISSIONS|tojson }}
+    </script>
+</div>
+
+<!-- 页面标识符和服务器ID，用于JS -->
+<body data-page-id="guild" data-guild-id="{{ guild.id }}">
+
+<!-- 将用户的权限列表嵌入到页面中，供JS使用 -->
+<div id="user-permissions-data" style="display:none;">{{ user_perms|tojson }}</div>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><img src="{{ guild.icon_url }}" class="guild-icon-header" alt="">管理: {{ guild.name }}</h1>
+</div>
+
+<!-- 主功能标签页导航 -->
+<ul class="nav nav-tabs" id="managementTabs" role="tablist">
+  
+  <li class="nav-item" role="presentation" data-permission="tab_members">
+      <button class="nav-link" id="members-tab" data-bs-toggle="tab" data-bs-target="#members-tab-pane" type="button"><i class="fa-solid fa-users"></i> 成员</button>
+  </li>
+  <li class="nav-item" role="presentation" data-permission="tab_roles">
+      <button class="nav-link" id="roles-tab" data-bs-toggle="tab" data-bs-target="#roles-tab-pane" type="button"><i class="fa-solid fa-tags"></i> 身份组</button>
+  </li>
+  <li class="nav-item" role="presentation" data-permission="tab_economy">
+      <button class="nav-link" id="economy-tab" data-bs-toggle="tab" data-bs-target="#economy-tab-pane" type="button"><i class="fa-solid fa-coins"></i> 经济</button>
+  </li>
+  
+  <!-- 【音乐控制台入口】 -->
+  <li class="nav-item" role="presentation" data-permission="tab_music">
+      <!-- 直接跳转到独立音乐页面 -->
+      <a class="nav-link" id="music-link" href="{{ url_for('music_control_page', guild_id=guild.id) }}">
+          <i class="fa-solid fa-music"></i> 音乐
+      </a>
+  </li>
+
+  <li class="nav-item" role="presentation" data-permission="tab_tickets">
+      <!-- 票据页也是直接跳转链接 -->
+      <a class="nav-link" id="tickets-link" href="{{ url_for('tickets_page', guild_id=guild.id) }}"><i class="fa-solid fa-ticket-alt"></i> 票据</a>
+  </li>
+  
+  <li class="nav-item" role="presentation" data-permission="tab_ai_faq">
+      <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-tab-pane" type="button"><i class="fa-solid fa-brain"></i> AI & FAQ</button>
+  </li>
+</ul>
+
+
+<!-- 标签页内容 -->
+<div class="tab-content pt-3" id="managementTabsContent">
+    <!-- 成员标签页 -->
+    <div class="tab-pane fade" id="members-tab-pane" role="tabpanel" data-permission="tab_members">
+        <div class="card">
+            <div class="card-header">
+                成员列表 ({{ guild.member_count }}) - 显示前10000名
+                <div class="float-end" id="bulk-actions-toolbar" style="display: none;">
+                    <span class="me-2"><strong id="bulk-selected-count">0</strong> 已选择</span>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary" id="bulk-add-role-btn">添加身份组</button>
+                        <button class="btn btn-outline-warning" id="bulk-remove-role-btn">移除身份组</button>
+                        <button class="btn btn-outline-danger" id="bulk-kick-btn">踢出</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input type="text" id="member-search-input" class="form-control" placeholder="按名称或ID搜索成员...">
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th><input class="form-check-input" type="checkbox" id="select-all-members"></th>
+                                <th>用户</th>
+                                <th>ID</th>
+                                <th>加入时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="member-list-body">
+                            {% for member in members %}
+                            <tr>
+                                <td><input class="form-check-input member-checkbox" type="checkbox" value="{{ member.id }}"></td>
+                                <td><img src="{{ member.avatar_url }}" class="avatar" alt="">{{ member.name }}</td>
+                                <td><code>{{ member.id }}</code></td>
+                                <td>{{ member.joined_at }}</td>
+                                <td><div class="btn-group"><button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#roleModal" data-member-id="{{ member.id }}" data-member-name="{{ member.name }}">身份组</button><button class="btn btn-warning btn-sm action-btn" data-action="action/kick" data-target-id="{{ member.id }}">踢出</button><button class="btn btn-danger btn-sm action-btn" data-action="action/ban" data-target-id="{{ member.id }}">封禁</button></div></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted">无法加载成员列表。</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 身份组标签页 -->
+    <div class="tab-pane fade" id="roles-tab-pane" role="tabpanel" data-permission="tab_roles">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>身份组管理</span>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#role-editor-modal" id="create-new-role-btn">
+                    <i class="fa-solid fa-plus"></i> 创建身份组
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr><th>身份组</th><th>ID</th><th>成员数</th><th>颜色</th><th>操作</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for role in roles %}
+                            <tr data-role-id="{{ role.id }}">
+                                <td style="color: {{ role.color }};"><i class="fa-solid fa-tag"></i> {{ role.name }}</td>
+                                <td><code>{{ role.id }}</code></td>
+                                <td>{{ role.member_count }}</td>
+                                <td><span class="color-swatch" style="background-color: {{ role.color }};"></span><code>{{ role.color }}</code></td>
+                                <td>
+                                    <div class="btn-group">
+                                        <button class="btn btn-primary btn-sm edit-role-btn" data-role-id="{{ role.id }}">编辑</button>
+                                        <button class="btn btn-danger btn-sm action-btn" data-action="action/delete_role" data-target-id="{{ role.id }}">删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted">无法加载身份组列表。</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 经济系统标签页 -->
+    <div class="tab-pane fade" id="economy-tab-pane" role="tabpanel" data-permission="tab_economy">
+        <div class="row">
+            <div class="col-12 mb-4"><div class="card"><div class="card-header"><i class="fa-solid fa-chart-line"></i> 经济系统概览</div><div class="card-body"><div class="row text-center"><div class="col-md-6"><h5>总货币流通量</h5><p class="fs-4 fw-bold" id="total-currency-stat">--</p></div><div class="col-md-6"><h5>活跃经济用户</h5><p class="fs-4 fw-bold" id="economy-user-count-stat">--</p></div></div><hr><h6>财富排行榜 TOP 10</h6><canvas id="economy-leaderboard-chart" style="max-height: 250px;"></canvas></div></div></div>
+            <div class="col-lg-7 mb-3 mb-lg-0"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center">商店管理 <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#editItemModal" data-item-is-new="true"><i class="fa-solid fa-plus"></i> 添加新物品</button></div><div class="card-body"><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>物品</th><th>价格</th><th>库存</th><th>操作</th></tr></thead><tbody id="shop-items-table"></tbody></table></div></div></div></div><div class="col-lg-5"><div class="card h-100"><div class="card-header">用户余额管理</div><div class="card-body"><form id="balance-form"><div class="mb-3"><label class="form-label">用户</label><select class="form-select" name="user_id" required><option value="" disabled selected>选择一个用户</option>{% for member in members %}<option value="{{member.id}}">{{member.name}}</option>{% endfor %}</select></div><div class="mb-3"><label class="form-label">金额</label><input type="number" class="form-control" name="amount" required min="0"></div><div class="btn-group w-100"><button type="submit" class="btn btn-success" data-action="give">给予</button><button type="submit" class="btn btn-warning" data-action="take">拿走</button><button type="submit" class="btn btn-info" data-action="set">设定</button></div></form></div></div></div>
+        </div>
+    </div>
+    
+    <!-- AI & FAQ 标签页 -->
+    <div class="tab-pane fade" id="ai-tab-pane" role="tabpanel" data-permission="tab_ai_faq">
+        <div class="row"><div class="col-lg-6 mb-3 mb-lg-0"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center">AI 知识库<button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#kbModal"><i class="fa-solid fa-plus"></i> 添加</button></div><div class="card-body" style="max-height: 400px; overflow-y: auto;"><ul class="list-group" id="kb-list"></ul></div></div></div><div class="col-lg-6"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center">服务器 FAQ<button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#faqModal"><i class="fa-solid fa-plus"></i> 添加</button></div><div class="card-body" style="max-height: 400px; overflow-y: auto;"><div class="accordion" id="faq-accordion"></div></div></div></div>
+    </div>
+</div>
+
+<!-- ######### 模态框 ######### -->
+
+<!-- 成员身份组管理模态框 (简单版) -->
+<div class="modal fade" id="roleModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="roleModalLabel">管理成员身份组</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>正在为 <strong id="role-modal-username">...</strong> 管理身份组</p><form id="member-roles-form"><input type="hidden" name="member_id" id="role-modal-member-id"><div class="mb-3"><label class="form-label">授予身份组</label><select class="form-select" name="roles_to_give" multiple size="5"></select></div><div class="mb-3"><label class="form-label">移除身份组</label><select class="form-select" name="roles_to_take" multiple size="5"></select></div><button type="submit" class="btn btn-primary w-100">应用更改</button></form></div></div></div></div>
+
+<!-- 商店物品编辑模态框 -->
+<div class="modal fade" id="editItemModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="editItemModalLabel">商店物品</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="edit-item-form"><input type="hidden" name="item_slug" id="item_slug"><div class="mb-3"><label class="form-label">名称</label><input type="text" class="form-control" id="item_name" name="name" required></div><div class="row"><div class="col-6 mb-3"><label class="form-label">价格</label><input type="number" class="form-control" id="item_price" name="price" required min="0"></div><div class="col-6 mb-3"><label class="form-label">库存</label><input type="number" class="form-control" id="item_stock" name="stock" required></div></div><div class="mb-3"><label class="form-label">描述</label><textarea class="form-control" id="item_description" name="description" rows="3"></textarea></div><div class="mb-3"><label class="form-label">授予身份组</label><select class="form-select" id="item_role" name="role_id"><option value="">无</option>{% for role in roles %}<option value="{{ role.id }}">@{{ role.name }}</option>{% endfor %}</select></div><div class="mb-3"><label class="form-label">购买后私信</label><input type="text" class="form-control" id="item_purchase_message" name="purchase_message"></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="submit" class="btn btn-primary" form="edit-item-form">保存</button></div></div></div></div>
+
+<!-- 知识库添加模态框 -->
+<div class="modal fade" id="kbModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">添加知识库条目</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="kb-add-form"><div class="mb-3"><label class="form-label">内容</label><textarea class="form-control" name="content" rows="5" required></textarea></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="submit" class="btn btn-primary" form="kb-add-form">添加</button></div></div></div></div>
+
+<!-- FAQ添加模态框 -->
+<div class="modal fade" id="faqModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">添加FAQ条目</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="faq-add-form"><div class="mb-3"><label class="form-label">关键词</label><input type="text" class="form-control" name="keyword" required></div><div class="mb-3"><label class="form-label">答案</label><textarea class="form-control" name="answer" rows="5" required></textarea></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="submit" class="btn btn-primary" form="faq-add-form">添加</button></div></div></div></div>
+
+<!-- 身份组编辑器模态框 -->
+<div class="modal fade" id="role-editor-modal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <form id="role-editor-form" enctype="multipart/form-data">
+                <input type="hidden" name="role_id" id="edit-role-id">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="role-editor-title">编辑身份组</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <!-- 左侧：导航和预览 -->
+                        <div class="col-md-4">
+                            <ul class="nav nav-pills flex-column" id="role-editor-tabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="display-tab" data-bs-toggle="tab" data-bs-target="#display-pane" type="button">显示</button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="permissions-tab" data-bs-toggle="tab" data-bs-target="#permissions-pane" type="button">权限</button>
+                                </li>
+                            </ul>
+                            <hr>
+                            <p class="text-muted small">预览</p>
+                            <div class="card bg-dark">
+                                <div class="card-body">
+                                    <span id="role-preview" class="badge">@预览身份组</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 右侧：设置内容 -->
+                        <div class="col-md-8">
+                            <div class="tab-content" id="role-editor-content">
+                                <!-- 显示标签页 -->
+                                <div class="tab-pane fade show active" id="display-pane">
+                                    <div class="mb-3">
+                                        <label for="role-name" class="form-label">身份组名称</label>
+                                        <input type="text" class="form-control" id="role-name" name="name" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="role-color" class="form-label">身份组颜色</label>
+                                        <input type="color" class="form-control form-control-color" id="role-color" name="color" value="#99AAB5">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="role-icon" class="form-label">身份组图标 (需要服务器等级2)</label>
+                                        <input class="form-control" type="file" id="role-icon" name="icon" accept="image/jpeg,image/png,image/gif">
+                                        <div class="form-text">上传大小低于 256 KB 的图片。</div>
+                                    </div>
+                                    <hr>
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" id="role-hoist" name="hoist">
+                                        <label class="form-check-label" for="role-hoist">在成员列表中单独显示身份组成员</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="role-mentionable" name="mentionable">
+                                        <label class="form-check-label" for="role-mentionable">允许任何人 @ 这个身份组</label>
+                                    </div>
+                                </div>
+                                <!-- 权限标签页 -->
+                                <div class="tab-pane fade" id="permissions-pane" style="max-height: 60vh; overflow-y: auto;">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="clear-all-perms">
+                                        <label class="form-check-label" for="clear-all-perms">清除所有权限</label>
+                                    </div>
+                                    {% for category, perms in DISCORD_PERMISSIONS.items() %}
+                                    <fieldset class="mb-4">
+                                        <legend class="h6">{{ category }}</legend>
+                                        {% for perm_key, perm_name in perms.items() %}
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" value="{{ perm_key }}" id="perm-{{ perm_key }}" name="permissions">
+                                            <label class="form-check-label" for="perm-{{ perm_key }}">{{ perm_name }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </fieldset>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="save-role-btn">保存更改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 引入 Chart.js 库 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</body>
+{% endblock %}

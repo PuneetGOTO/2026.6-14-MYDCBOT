@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* === 票据系统高级样式 === */
+    .tickets-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr; /* 左侧列表，右侧区域 */
+        gap: 1rem;
+        height: calc(100vh - 140px);
+        max-height: 950px;
+    }
+
+    .tickets-panel {
+        background-color: var(--bg-dark-2);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    /* 左侧列表 */
+    .tickets-list-panel .panel-header {
+        padding: 0.75rem 1rem;
+        background-color: rgba(var(--primary-glow-rgb), 0.05);
+        border-bottom: 1px solid var(--border-color);
+        font-family: 'Orbitron', sans-serif;
+    }
+    #filter-controls {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+        background-color: rgba(0,0,0,0.2);
+    }
+    #ticket-list-container { overflow-y: auto; flex-grow: 1; }
+
+    /* 列表项 */
+    .ticket-list-item {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        cursor: pointer;
+        position: relative;
+        transition: background-color 0.2s;
+    }
+    .ticket-list-item:hover { background-color: rgba(var(--primary-glow-rgb), 0.1); }
+    .ticket-list-item.active { background-color: rgba(var(--primary-glow-rgb), 0.25); border-left: 3px solid var(--primary-glow); }
+    
+    .ticket-list-item.has-new::before {
+        content: ''; position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+        width: 8px; height: 8px; background-color: var(--secondary-glow); border-radius: 50%;
+        box-shadow: 0 0 5px var(--secondary-glow);
+    }
+    .ticket-list-item.has-new { padding-left: 20px; }
+
+    .ticket-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .ticket-item-dept { font-weight: bold; font-size: 0.85rem; color: var(--primary-glow); }
+    .ticket-item-time { font-size: 0.7rem; color: #666; }
+    .ticket-item-preview {
+        font-size: 0.8rem; color: #8b949e;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* 右侧布局：聊天 + 侧边栏 */
+    .chat-panel-grid {
+        display: grid;
+        grid-template-columns: 1fr 260px;
+        height: 100%;
+    }
+    
+    #ticket-chat-view { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+    #ticket-chat-header { border-bottom: 1px solid var(--border-color); padding: 0.75rem 1rem; flex-shrink: 0; }
+    
+    /* 核心修复：滑动条生效 */
+    #ticket-chat-messages { 
+        flex-grow: 1; 
+        overflow-y: auto; 
+        padding: 1rem; 
+        min-height: 0; /* 必须：允许子元素溢出产生滚动 */
+        scroll-behavior: smooth;
+    }
+    
+    #ticket-chat-input-area { flex-shrink: 0; }
+
+    /* 消息气泡 */
+    .message-item { display: flex; margin-bottom: 1rem; align-items: flex-start; }
+    .message-item .avatar { width: 38px; height: 38px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
+    .message-content { max-width: 85%; }
+    .message-content p { padding: 0.7rem 1rem; border-radius: 12px; margin-bottom: 0.2rem; white-space: pre-wrap; word-break: break-word; font-size: 0.95rem; }
+    
+    .message-user .message-content p { background-color: var(--bg-dark-3); border-top-left-radius: 0; }
+    
+    .message-staff { flex-direction: row-reverse; }
+    .message-staff .avatar { margin-left: 12px; margin-right: 0; }
+    .message-staff .message-content { text-align: right; }
+    .message-staff .message-content p { background-color: rgba(138, 43, 226, 0.2); border-top-right-radius: 0; }
+    
+    .message-ai .message-content p { background-color: rgba(0, 255, 170, 0.05); border-left: 3px solid var(--secondary-glow); border-top-left-radius: 0; }
+
+    /* 侧边栏 */
+    #ticket-info-sidebar { border-left: 1px solid var(--border-color); padding: 1.2rem; overflow-y: auto; background: rgba(0,0,0,0.1); }
+    #ticket-info-sidebar h6 { font-family: 'Orbitron'; font-size: 0.8rem; margin-top: 1.5rem; color: var(--primary-glow); text-transform: uppercase; }
+    #ticket-info-sidebar small { color: #8b949e; }
+</style>
+
+<body data-page-id="tickets" data-guild-id="{{ guild.id }}">
+<div class="container-fluid p-4">
+    <div class="tickets-layout">
+        
+        <!-- 左侧：票据列表 -->
+        <div class="tickets-panel tickets-list-panel">
+            <div class="panel-header"><i class="fa-solid fa-inbox me-2"></i>票据中心</div>
+            <div id="filter-controls" class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check filter-checkbox" name="statusFilter" id="status-all" value="all" checked>
+                <label class="btn btn-sm btn-outline-secondary" for="status-all">全部</label>
+                <input type="radio" class="btn-check filter-checkbox" name="statusFilter" id="status-open" value="OPEN">
+                <label class="btn btn-sm btn-outline-secondary" for="status-open">待处理</label>
+                <input type="radio" class="btn-check filter-checkbox" name="statusFilter" id="status-claimed" value="CLAIMED">
+                <label class="btn btn-sm btn-outline-secondary" for="status-claimed">认领中</label>
+            </div>
+            <div id="ticket-list-container">
+                <div class="p-5 text-center text-muted">
+                    <div class="spinner-border spinner-border-sm mb-2"></div>
+                    <p>正在同步票据...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：详情与聊天 -->
+        <div class="tickets-panel">
+             <div id="chat-and-info-container" class="d-none chat-panel-grid">
+                <!-- 聊天窗口 -->
+                <div id="ticket-chat-view">
+                    <div id="ticket-chat-header"></div>
+                    <div id="ticket-chat-messages"></div>
+                    <div id="ticket-chat-input-area" class="p-3 border-top border-secondary bg-dark">
+                        <form id="ticket-reply-form">
+                            <div class="input-group shadow-sm">
+                                <input type="text" id="ticket-reply-input" class="form-control" placeholder="在此输入回复消息..." disabled>
+                                <button class="btn btn-outline-info" type="button" id="ai-suggest-reply-btn" title="获取AI建议回复" disabled>
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                </button>
+                                <button class="btn btn-primary px-4" type="submit" id="ticket-reply-button" disabled>
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <!-- 信息侧栏 -->
+                <div id="ticket-info-sidebar">
+                    <h6><i class="fa-solid fa-id-card me-2"></i>票据摘要</h6>
+                    <small id="info-ticket-id" class="d-block mb-1">ID: 加载中...</small>
+                    <small id="info-department" class="d-block">部门: 加载中...</small>
+                    
+                    <h6><i class="fa-solid fa-user me-2"></i>发起人</h6>
+                    <div id="info-creator">...</div>
+
+                    <h6><i class="fa-solid fa-user-check me-2"></i>处理专家</h6>
+                    <div id="info-assignee">...</div>
+                </div>
+             </div>
+             
+             <!-- 默认占位图 -->
+            <div id="ticket-placeholder" class="d-flex align-items-center justify-content-center h-100">
+                <div class="text-center text-muted opacity-50">
+                    <i class="fa-solid fa-comments-question fa-4x mb-3"></i>
+                    <h5>请从左侧选择一个活跃票据进行回复</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 分配负责人弹窗 -->
+<div class="modal fade" id="assignModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title font-monospace">指派负责人</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assign-form">
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary">选择一名员工接管此票据：</label>
+                        <select id="assignee-select" class="form-select" required>
+                            <option value="">正在获取员工名单...</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">确认指派</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.body.dataset.pageId !== 'tickets') return;
+
+    // ==========================================
+    // == 0. 变量定义与 DOM 引用 (核心修复)
+    // ==========================================
+    const GUILD_ID = document.body.dataset.guildId;
+    const userInfo = JSON.parse('{{ user|tojson | safe }}');
+    let allTickets = [];
+    let currentTicket = null;
+    let socket;
+
+    // DOM 引用
+    const ticketListContainer = document.getElementById('ticket-list-container');
+    const chatContainer = document.getElementById('chat-and-info-container');
+    const chatHeader = document.getElementById('ticket-chat-header');
+    const chatMessages = document.getElementById('ticket-chat-messages');
+    const chatPlaceholder = document.getElementById('ticket-placeholder');
+    const replyForm = document.getElementById('ticket-reply-form');
+    const replyInput = document.getElementById('ticket-reply-input');
+    const replyBtn = document.getElementById('ticket-reply-button');
+    const aiSuggestBtn = document.getElementById('ai-suggest-reply-btn');
+    
+    // 右侧边栏引用
+    const infoTicketId = document.getElementById('info-ticket-id');
+    const infoDepartment = document.getElementById('info-department');
+    const infoCreator = document.getElementById('info-creator');
+    const infoAssignee = document.getElementById('info-assignee');
+
+    const assignModal = new bootstrap.Modal(document.getElementById('assignModal'));
+    const assignForm = document.getElementById('assign-form');
+    const assigneeSelect = document.getElementById('assignee-select');
+
+    // ==========================================
+    // == 1. 渲染与逻辑函数
+    // ==========================================
+
+    function renderTicketList() {
+        const statusFilter = document.querySelector('input[name="statusFilter"]:checked').value;
+        const filteredTickets = allTickets.filter(t => statusFilter === 'all' || t.status === statusFilter);
+
+        ticketListContainer.innerHTML = filteredTickets.length === 0 
+            ? '<div class="p-3 text-center text-muted">没有符合条件的票据。</div>'
+            : filteredTickets.map(ticket => {
+                const isActive = currentTicket && currentTicket.ticket_id === ticket.ticket_id;
+                const hasNew = ticket.has_new_message ? 'has-new' : '';
+                const lastActivity = new Date(ticket.last_activity_ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return `
+                <div class="ticket-list-item ${isActive ? 'active' : ''} ${hasNew}" data-ticket-id="${ticket.ticket_id}">
+                    <div class="ticket-item-header">
+                        <span class="ticket-item-dept text-truncate">${escapeHtml(ticket.department_name)}</span>
+                        <span class="ticket-item-time">${lastActivity}</span>
+                    </div>
+                    <div class="ticket-item-preview">
+                        <strong>${escapeHtml(ticket.last_message_author)}:</strong> ${escapeHtml(ticket.last_message_content)}
+                    </div>
+                </div>`;
+            }).join('');
+    }
+    
+    function renderMessage(msg) {
+        let authorType = 'message-user';
+        if (msg.author.is_bot) authorType = 'message-ai';
+        else if (currentTicket && String(msg.author.id) !== String(currentTicket.creator_id)) authorType = 'message-staff';
+
+        let contentHtml = '';
+        if (msg.content) {
+            contentHtml += `<p>${escapeHtml(msg.content).replace(/\n/g, '<br>')}</p>`;
+        }
+        
+        if (msg.embeds && msg.embeds.length > 0) {
+            msg.embeds.forEach(embed => {
+                let embedContent = '';
+                if (embed.title) embedContent += `<strong>${escapeHtml(embed.title)}</strong><br>`;
+                if (embed.description) embedContent += escapeHtml(embed.description).replace(/\n/g, '<br>');
+                const borderColor = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : 'var(--border-color)';
+                contentHtml += `<p style="border-left: 3px solid ${borderColor}; padding-left: 10px; background: rgba(255,255,255,0.02);">${embedContent || '<em>(嵌入数据)</em>'}</p>`;
+            });
+        }
+        
+        return `<div class="message-item ${authorType}">
+                    <img src="${msg.author.avatar_url}" class="avatar">
+                    <div class="message-content">
+                        <strong class="small">${escapeHtml(msg.author.name)}</strong>
+                        <small class="text-muted ms-2" style="font-size:0.7rem">${new Date(msg.timestamp).toLocaleTimeString()}</small>
+                        ${contentHtml}
+                    </div>
+                </div>`;
+    }
+
+    function appendMessageToChat(msgHtml) {
+        const placeholder = chatMessages.querySelector('.text-center');
+        if (placeholder) placeholder.remove();
+        chatMessages.insertAdjacentHTML('beforeend', msgHtml);
+        // 自动滚动到底部
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    async function loadTicket(ticketId) {
+        const ticket = allTickets.find(t => t.ticket_id === ticketId);
+        if (!ticket) return;
+        
+        currentTicket = ticket;
+        if (socket && socket.connected) {
+            socket.emit('join_ticket_room', { channel_id: currentTicket.channel_id });
+        }
+        // 标记为已读
+        const ticketIndex = allTickets.findIndex(t => t.ticket_id === ticketId);
+        if (ticketIndex > -1) allTickets[ticketIndex].has_new_message = false;
+        renderTicketList();
+
+        chatPlaceholder.classList.add('d-none');
+        chatContainer.classList.remove('d-none');
+        
+        const isAiManaged = ticket.is_ai_managed;
+        chatHeader.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="m-0">#${ticket.channel_id.slice(-6)}</h5>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn ${isAiManaged ? 'btn-warning' : 'btn-primary'}" id="toggle-ai-assist-btn">
+                        <i class="fa-solid fa-robot"></i> ${isAiManaged ? '停止 AI' : 'AI 托管'}
+                    </button>
+                    ${ticket.status === 'OPEN' ? '<button class="btn btn-success" id="claim-ticket-btn">认领</button>' : ''}
+                    <button class="btn btn-outline-info" id="assign-ticket-btn">分配</button>
+                    <button class="btn btn-danger" id="close-ticket-btn">关闭</button>
+                </div>
+            </div>`;
+
+        infoTicketId.innerHTML = `ID: <small><code>${ticket.ticket_id}</code></small>`;
+        infoDepartment.innerHTML = `部门: <small>${escapeHtml(ticket.department_name)}</small>`;
+        infoCreator.innerHTML = `<small>${escapeHtml(ticket.creator_name)}</small>`;
+        infoAssignee.innerHTML = `<small>${escapeHtml(ticket.claimed_by_name) || '<em>未分配</em>'}</small>`;
+        
+        replyInput.disabled = isAiManaged;
+        replyBtn.disabled = isAiManaged;
+        aiSuggestBtn.disabled = isAiManaged;
+        replyInput.placeholder = isAiManaged ? 'AI 客服正在自动回复中...' : '输入回复内容...';
+        
+        chatMessages.innerHTML = '<div class="p-5 text-center text-muted">正在检索聊天记录...</div>';
+        try {
+            const data = await apiRequest(`/api/guild/${GUILD_ID}/ticket/${ticket.channel_id}/history`);
+            chatMessages.innerHTML = '';
+            data.history.forEach(msg => appendMessageToChat(renderMessage(msg)));
+        } catch (e) {
+            chatMessages.innerHTML = `<div class="text-danger p-3">记录检索失败: ${e.message}</div>`;
+        }
+    }
+
+    // ==========================================
+    // == 2. 事件监听逻辑
+    // ==========================================
+
+    document.querySelector('#filter-controls').addEventListener('change', renderTicketList);
+    
+    ticketListContainer.addEventListener('click', e => {
+        const item = e.target.closest('.ticket-list-item');
+        if (item) loadTicket(item.dataset.ticketId);
+    });
+
+    chatHeader.addEventListener('click', async e => {
+        if (!currentTicket) return;
+        const tid = currentTicket.ticket_id;
+
+        if (e.target.id === 'claim-ticket-btn') {
+            e.target.disabled = true;
+            try { await apiRequest(`/api/guild/${GUILD_ID}/ticket/${tid}/claim`, { method: 'POST' }); } 
+            catch (err) { e.target.disabled = false; }
+        }
+        if (e.target.id === 'assign-ticket-btn') {
+            assigneeSelect.innerHTML = '<option value="">正在加载名单...</option>';
+            assignModal.show();
+            apiRequest(`/api/guild/${GUILD_ID}/staff_members`).then(d => {
+                assigneeSelect.innerHTML = d.staff.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+            });
+        }
+        if (e.target.id === 'close-ticket-btn') {
+            if (confirm('确认关闭并归档此票据？')) {
+                e.target.disabled = true;
+                apiRequest(`/api/guild/${GUILD_ID}/ticket/${tid}/close`, { method: 'POST' });
+            }
+        }
+        if (e.target.id === 'toggle-ai-assist-btn') {
+            e.target.disabled = true;
+            apiRequest(`/api/guild/${GUILD_ID}/ticket/${tid}/toggle_ai_assist`, { method: 'POST' }).catch(() => e.target.disabled = false);
+        }
+    });
+    
+    replyForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const content = replyInput.value.trim();
+        if (content && currentTicket && socket && socket.connected) {
+            // 即时本地显示
+            const fakeMsg = {
+                author: { id: userInfo.id, name: userInfo.username, avatar_url: userInfo.avatar, is_bot: false },
+                content: content, timestamp: new Date().toISOString()
+            };
+            appendMessageToChat(renderMessage(fakeMsg));
+            socket.emit('send_ticket_reply', { guild_id: GUILD_ID, channel_id: currentTicket.channel_id, content: content });
+            replyInput.value = '';
+        }
+    });
+
+    aiSuggestBtn.addEventListener('click', async () => {
+        if (!currentTicket) return;
+        aiSuggestBtn.disabled = true;
+        const oldPlaceholder = replyInput.placeholder;
+        replyInput.placeholder = "AI 正在分析并生成建议...";
+        try {
+            const data = await apiRequest(`/api/guild/${GUILD_ID}/ticket/${currentTicket.ticket_id}/ai_suggest`, { method: 'POST' });
+            if (data.status === 'success') { replyInput.value = data.suggestion; replyInput.focus(); }
+        } finally { aiSuggestBtn.disabled = false; replyInput.placeholder = oldPlaceholder; }
+    });
+
+    assignForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!assigneeSelect.value || !currentTicket) return;
+        apiRequest(`/api/guild/${GUILD_ID}/ticket/${currentTicket.ticket_id}/assign`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignee_id: assigneeSelect.value })
+        }).then(() => assignModal.hide());
+    });
+
+    // ==========================================
+    // == 3. Socket.IO 实时推送逻辑
+    // ==========================================
+    try {
+        socket = io({ transports: ['websocket'], path: '/my-custom-socket-path' });
+        
+        socket.on('connect', () => socket.emit('join_tickets_room', { guild_id: GUILD_ID }));
+
+        socket.on('new_ticket', (t) => { allTickets.unshift(t); renderTicketList(); });
+
+        socket.on('new_ticket_message', (msg) => {
+            const idx = allTickets.findIndex(t => t.channel_id === msg.channel_id);
+            if (idx > -1) {
+                allTickets[idx].last_message_content = msg.content || '(嵌入消息)';
+                allTickets[idx].last_message_author = msg.author.name;
+                allTickets[idx].last_activity_ts = new Date(msg.timestamp).getTime() / 1000;
+                if (String(msg.author.id) !== String(userInfo.id)) allTickets[idx].has_new_message = true;
+                // 置顶
+                const t = allTickets.splice(idx, 1)[0];
+                allTickets.unshift(t);
+                renderTicketList();
+            }
+            if (currentTicket && currentTicket.channel_id === msg.channel_id && String(msg.author.id) !== String(userInfo.id)) {
+                appendMessageToChat(renderMessage(msg));
+            }
+        });
+
+        socket.on('ticket_closed', (data) => {
+            allTickets = allTickets.filter(t => t.channel_id !== data.channel_id);
+            if (currentTicket && currentTicket.channel_id === data.channel_id) {
+                currentTicket = null;
+                chatContainer.classList.add('d-none');
+                chatPlaceholder.classList.remove('d-none');
+            }
+            renderTicketList();
+        });
+
+        socket.on('ticket_ai_status_changed', (data) => {
+             const idx = allTickets.findIndex(t => t.ticket_id === data.ticket_id);
+             if(idx > -1) {
+                 allTickets[idx].is_ai_managed = data.is_ai_managed;
+                 if (currentTicket && currentTicket.ticket_id === data.ticket_id) loadTicket(data.ticket_id);
+             }
+        });
+
+        socket.on('ticket_status_changed', (data) => {
+             const idx = allTickets.findIndex(t => t.ticket_id === data.ticket_id);
+             if (idx > -1) {
+                 allTickets[idx].status = data.new_status;
+                 allTickets[idx].claimed_by_id = data.claimed_by_id;
+                 allTickets[idx].claimed_by_name = data.claimed_by_name;
+                 renderTicketList();
+                 if (currentTicket && currentTicket.ticket_id === data.ticket_id) loadTicket(data.ticket_id);
+             }
+        });
+    } catch (e) { console.error("Socket 链接异常", e); }
+
+    // 初始加载
+    apiRequest(`/api/guild/${GUILD_ID}/tickets`).then(d => { allTickets = d.tickets; renderTicketList(); });
+});
+
+// 全局转义函数备份
+if (typeof escapeHtml !== 'function') {
+    function escapeHtml(text) {
+        if (!text) return '';
+        return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+}
+</script>
+</body>
+{% endblock %}

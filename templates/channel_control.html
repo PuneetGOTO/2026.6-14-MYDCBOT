@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* === 页面专属样式 === */
+    .terminal-body { 
+        background-color: #050a0e; 
+        min-height: 100vh;
+    }
+
+    .page-title { 
+        font-family: 'Orbitron', sans-serif; 
+        color: #00ffaa; 
+        text-shadow: 0 0 10px rgba(0, 255, 170, 0.4); 
+        letter-spacing: 2px; 
+    }
+
+    /* 通用控制卡片 */
+    .control-card { 
+        background: rgba(15, 20, 28, 0.85); 
+        border: 1px solid rgba(0, 255, 170, 0.3); 
+        box-shadow: 0 0 20px rgba(0, 255, 170, 0.1); 
+        backdrop-filter: blur(10px);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+    }
+    .control-card-header { 
+        font-family: 'Roboto Mono', monospace; 
+        background: rgba(0, 255, 170, 0.1); 
+        border-bottom: 1px solid rgba(0, 255, 170, 0.3); 
+        padding: 0.8rem 1.2rem;
+        text-transform: uppercase; 
+        font-weight: bold;
+        color: #00ffaa;
+    }
+    .control-card-body { padding: 1.5rem; }
+
+    /* 指挥官面板特有样式 */
+    .commander-panel {
+        border-color: var(--info-glow);
+        box-shadow: 0 0 20px rgba(0, 213, 255, 0.15);
+    }
+    .commander-header {
+        background: rgba(0, 213, 255, 0.1);
+        border-bottom-color: var(--info-glow);
+        color: var(--info-glow);
+    }
+
+    /* 录音按钮 */
+    .mic-btn {
+        width: 100%;
+        height: 50px;
+        font-weight: bold;
+        transition: all 0.2s;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+    .mic-btn:active { transform: scale(0.98); }
+    
+    /* 录音时的脉冲动画 */
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+    }
+    .btn-danger.mic-btn {
+        animation: pulse-red 1.5s infinite;
+    }
+
+    /* 终端风格输入框 */
+    .terminal-input { 
+        font-family: 'Roboto Mono', monospace; 
+        background-color: rgba(0,0,0,0.5) !important; 
+        border-color: rgba(255, 255, 255, 0.2) !important; 
+        color: #fff !important; 
+    }
+    .terminal-input:focus { 
+        box-shadow: 0 0 10px rgba(0, 255, 170, 0.3); 
+        border-color: #00ffaa !important;
+    }
+    .terminal-label {
+        color: #aaa;
+        font-size: 0.85rem;
+        margin-bottom: 0.4rem;
+        display: block;
+    }
+
+    /* 语音频道列表样式 */
+    #voice-channels-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+        gap: 1rem; 
+    }
+    .vc-card { 
+        background: rgba(255,255,255,0.03); 
+        border: 1px solid rgba(255,255,255,0.1); 
+        padding: 0; 
+        border-radius: 6px; 
+    }
+    .vc-card-header { 
+        font-weight: bold; 
+        border-bottom: 1px solid rgba(255,255,255,0.1); 
+        padding: 0.6rem 1rem;
+        background: rgba(0,0,0,0.2);
+    }
+    .vc-members-list { padding: 0.5rem; }
+    .vc-member { 
+        display: flex; 
+        align-items: center; 
+        justify-content: space-between; 
+        padding: 0.4rem 0.5rem; 
+        border-bottom: 1px solid rgba(255,255,255,0.05); 
+    }
+    .vc-member:last-child { border-bottom: none; }
+    .vc-member .avatar { width: 24px; height: 24px; border-radius: 50%; margin-right: 8px; }
+</style>
+
+<body data-page-id="channel_control" data-guild-id="{{ guild.id }}" data-owner-id="{{ guild.owner_id }}" class="terminal-body">
+
+<div class="container-fluid p-4">
+    <!-- 顶部标题栏 -->
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom border-secondary pb-2">
+        <div>
+            <h1 class="page-title mb-0"><i class="fa-solid fa-satellite"></i> 信道控制 <span class="fs-5 text-muted">[{{ guild.name }}]</span></h1>
+            <small class="text-muted" style="font-family: monospace;">> 实时音频流监控与接入协议</small>
+        </div>
+        <!-- 机器人语音状态指示器 -->
+        <div id="bot-voice-status" class="h5 m-0 bg-dark px-3 py-2 rounded border border-secondary">
+            <span class="text-muted"><i class="fa-regular fa-circle small"></i> 正在扫描音频链路...</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧栏：控制面板 -->
+        <div class="col-lg-4 mb-4">
+            
+            <!-- 1. 语音指挥官面板 (【更新版】) -->
+            <div class="control-card commander-panel">
+                <div class="control-card-header commander-header">
+                    <i class="fa-solid fa-headset me-2"></i> 语音指挥官
+                </div>
+                <div class="control-card-body">
+                    <!-- TTS 输入 -->
+                    <div class="mb-4">
+                        <label class="terminal-label">> 文字广播 (TTS)</label>
+                        <div class="input-group">
+                            <input type="text" id="tts-input" class="form-control terminal-input" placeholder="输入文字，机器人将朗读...">
+                            <button class="btn btn-info" id="tts-send-btn" type="button">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 语音录制 -->
+                    <div class="mb-4">
+                        <label class="terminal-label">> 语音广播</label>
+                        
+                        <!-- 【修改】录音/停止按钮 -->
+                        <button class="btn btn-outline-light mic-btn" id="mic-record-btn">
+                            <i class="fa-solid fa-microphone"></i> 开始录音
+                        </button>
+
+                        <!-- 【新增】预览播放器 (默认隐藏) -->
+                        <div id="audio-preview-container" class="d-none mt-2">
+                            <audio controls id="audio-preview-player" class="w-100 mb-2"></audio>
+                            <button class="btn btn-success w-100" id="send-audio-btn">
+                                <i class="fa-solid fa-arrow-up-from-bracket me-2"></i> 发送此录音
+                            </button>
+                        </div>
+                        <div class="form-text text-muted small mt-1 text-center">* 仅支持 HTTPS 环境</div>
+                    </div>
+                    
+                    <hr class="border-secondary my-3">
+                    
+                    <!-- 紧急断开 -->
+                    <button class="btn btn-danger w-100" id="btn-bot-leave-vc">
+                        <i class="fa-solid fa-phone-slash me-2"></i> 断开语音连接
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2. 欢迎系统设置 (保留原有功能) -->
+            <div class="control-card">
+                <div class="control-card-header">
+                    <i class="fa-solid fa-door-open me-2"></i> 接入点配置 [欢迎]
+                </div>
+                <div class="control-card-body">
+                    <form id="welcome-settings-form">
+                        <div class="row g-2">
+                            <div class="col-md-6 mb-2">
+                                <label class="terminal-label">欢迎频道</label>
+                                <select class="form-select form-select-sm terminal-input" name="welcome_channel_id">
+                                    <option value="">-- 禁用 --</option>
+                                    {% for c in text_channels %}
+                                    <option value="{{ c.id }}" {% if welcome_settings.channel_id|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="terminal-label">规则频道</label>
+                                <select class="form-select form-select-sm terminal-input" name="rules_channel_id">
+                                    <option value="">-- 无 --</option>
+                                    {% for c in text_channels %}
+                                    <option value="{{ c.id }}" {% if welcome_settings.rules_channel_id|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="terminal-label">身份组频道</label>
+                                <select class="form-select form-select-sm terminal-input" name="roles_info_channel_id">
+                                    <option value="">-- 无 --</option>
+                                    {% for c in text_channels %}
+                                    <option value="{{ c.id }}" {% if welcome_settings.roles_info_channel_id|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="terminal-label">认证频道</label>
+                                <select class="form-select form-select-sm terminal-input" name="verification_channel_id">
+                                     <option value="">-- 无 --</option>
+                                    {% for c in text_channels %}
+                                    <option value="{{ c.id }}" {% if welcome_settings.verification_channel_id|string == c.id|string %}selected{% endif %}>#{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-2 mt-3">
+                             <label class="terminal-label">标题</label>
+                             <input type="text" class="form-control form-control-sm terminal-input" name="title" value="{{ welcome_settings.title or '🎉 欢迎来到 {guild}! 🎉' }}">
+                        </div>
+                         <div class="mb-3">
+                             <label class="terminal-label">内容 (支持 {user}, {guild})</label>
+                             <textarea class="form-control form-control-sm terminal-input" name="description" rows="3">{{ welcome_settings.description or '你好 {user}! 很高兴你能加入我们！' }}</textarea>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-success w-100">保存欢迎设置</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧栏：语音频道监控 -->
+        <div class="col-lg-8 mb-4">
+            <div class="control-card h-100">
+                <div class="control-card-header text-danger">
+                    <i class="fa-solid fa-waveform-lines me-2"></i> 音频流实时监控
+                </div>
+                <div class="control-card-body p-0">
+                    <!-- JS 将在这里渲染频道列表 -->
+                    <div id="voice-channels-grid" class="p-3" style="max-height: 80vh; overflow-y: auto;">
+                        <div class="text-center text-muted py-5">
+                            <div class="spinner-border text-secondary mb-3" role="status"></div>
+                            <p>正在扫描通讯信道...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+{% endblock %}

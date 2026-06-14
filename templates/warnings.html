@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* 专属于此页面的CSS */
+    .terminal-body { 
+        background-color: #050a0e; 
+        background-image: 
+            linear-gradient(rgba(255, 0, 85, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 0, 85, 0.05) 1px, transparent 1px);
+        background-size: 30px 30px;
+        animation: bg-pan 20s linear infinite;
+    }
+    @keyframes bg-pan {
+        from { background-position: 0 0; }
+        to { background-position: -600px 0; }
+    }
+
+
+    /* 扫描线覆盖层，营造老旧显示器效果 */
+    .scanline-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 70%, rgba(255,255,255,0.1));
+        background-size: 100% 4px;
+        animation: scan 10s linear infinite;
+        z-index: -1;
+    }
+    @keyframes scan {
+        from { background-position: 0 0; }
+        to { background-position: 0 -200px; }
+    }
+
+    .page-title { 
+        font-family: var(--font-primary); 
+        color: var(--danger-glow); 
+        text-shadow: 0 0 10px var(--danger-glow), 0 0 20px var(--danger-glow);
+        font-size: 2.5rem;
+    }
+    .page-subtitle { 
+        font-family: var(--font-mono); 
+        color: var(--text-secondary); 
+        letter-spacing: 1px;
+    }
+    .page-subtitle::before { 
+        content: 'SYSTEM_PROMPT //'; 
+        color: var(--secondary-glow); 
+        margin-right: 10px; 
+    }
+
+    .protocol-panel {
+        background: rgba(15, 5, 10, 0.85);
+        border: 1px solid rgba(255, 0, 85, 0.5);
+        box-shadow: 0 0 25px rgba(255, 0, 85, 0.3), inset 0 0 15px rgba(255, 0, 85, 0.1);
+        backdrop-filter: blur(8px);
+        border-radius: 0;
+    }
+    .protocol-header {
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        color: var(--danger-glow);
+        background: rgba(255, 0, 85, 0.2);
+        border-bottom: 1px solid rgba(255, 0, 85, 0.5);
+        padding: 0.75rem 1.25rem;
+    }
+    .terminal-label { 
+        color: var(--warning-glow); 
+        text-shadow: 0 0 5px var(--warning-glow); 
+        font-size: 0.9rem;
+        text-transform: uppercase;
+    }
+    .terminal-input, .terminal-input:focus {
+        font-family: var(--font-mono);
+        background-color: rgba(0,0,0,0.7) !important;
+        border-color: rgba(255, 170, 0, 0.5) !important;
+        color: var(--warning-glow) !important;
+        box-shadow: none;
+    }
+    .terminal-input:focus {
+        border-color: var(--warning-glow) !important;
+        box-shadow: 0 0 15px rgba(255, 170, 0, 0.5) !important;
+    }
+    .btn-execute {
+        text-shadow: 0 0 8px;
+        animation: pulse 1.5s infinite;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 5px var(--danger-glow); }
+        50% { box-shadow: 0 0 25px var(--danger-glow); }
+        100% { box-shadow: 0 0 5px var(--danger-glow); }
+    }
+    .status-board .list-group-item {
+        background-color: rgba(0,0,0,0.4);
+        border-color: rgba(255,255,255,0.1);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+    }
+    .status-board .list-group-item .avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        margin-right: 12px;
+        vertical-align: middle;
+    }
+    .warn-count-tag { 
+        font-family: var(--font-mono); 
+        font-size: 1.2rem; 
+        font-weight: 700;
+        padding: 0.25rem 0.75rem;
+        border-radius: 3px;
+        background: rgba(0,0,0,0.5);
+    }
+    .warn-count-1 { color: var(--secondary-glow); border: 1px solid var(--secondary-glow); }
+    .warn-count-2 { color: var(--warning-glow); border: 1px solid var(--warning-glow); }
+    .warn-count-3 { 
+        color: var(--danger-glow); 
+        border: 1px solid var(--danger-glow); 
+        animation: blink 1s infinite;
+        text-shadow: 0 0 5px var(--danger-glow);
+    }
+    @keyframes blink { 
+        50% { opacity: 0.5; background-color: rgba(255,0,85,0.2); } 
+    }
+</style>
+
+<!-- 【修复】在 body 标签上添加 data-page-id -->
+<body data-page-id="warnings" data-guild-id="{{ guild.id }}" class="terminal-body">
+<div class="scanline-overlay"></div>
+
+<div class="container-fluid p-4">
+    <h1 class="page-title"><i class="fa-solid fa-skull-crossbones"></i> 纪律协议执行终端</h1>
+    <p class="page-subtitle">> 锁定服务器: {{ guild.name }} // 准备执行警告协议...</p>
+
+    <div class="row mt-4">
+        <!-- 左侧：协议执行面板 -->
+        <div class="col-lg-5 mb-4">
+            <div class="card protocol-panel">
+                <div class="card-header protocol-header"><i class="fa-solid fa-crosshairs"></i> 目标锁定</div>
+                <div class="card-body">
+                    <form id="warnings-form">
+                        <div class="mb-3">
+                            <label class="form-label terminal-label">> 目标个体 (TARGET_UID):</label>
+                            <select class="form-select terminal-input" name="user_id" required>
+                                <option value="" disabled selected>== 选择目标个体 ==</option>
+                                {% for member in members %}
+                                <option value="{{ member.id }}">{{ member.name }} ({{ member.id }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label terminal-label">> 执行原因 (REASON_TEXT):</label>
+                            <input type="text" class="form-control terminal-input" name="reason" placeholder="输入原因 (将记录在日志中)...">
+                        </div>
+                        <div class="d-grid gap-3">
+                            <!-- 【修复】修改按钮文本为中文 -->
+                            <button type="button" id="issue-warn-btn" class="btn btn-danger btn-lg btn-execute">
+                                <i class="fa-solid fa-biohazard"></i> 发出警告
+                            </button>
+                            <button type="button" id="revoke-warn-btn" class="btn btn-outline-warning btn-lg">
+                                <i class="fa-solid fa-shield-heart"></i> 撤销警告
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：状态面板 -->
+        <div class="col-lg-7 mb-4">
+            <div class="card protocol-panel status-board">
+                <div class="card-header protocol-header"><i class="fa-solid fa-list-check"></i> 警告状态板</div>
+                <div class="card-body" style="max-height: 70vh; overflow-y: auto;">
+                    <ul class="list-group" id="warned-users-list">
+                        <!-- JS会在这里填充警告列表 -->
+                        <li class="list-group-item text-muted text-center">正在扫描警告记录...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+{% endblock %}

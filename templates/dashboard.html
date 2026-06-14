@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- 页面标识符，用于JS识别 -->
+<div id="dashboard-page-marker" data-page-id="dashboard"></div>
+
+<style>
+    /* === 仪表盘专属样式 === */
+    :root {
+        --dash-bg: rgba(18, 18, 28, 0.6);
+        --dash-border: rgba(147, 112, 219, 0.3);
+        --dash-glow: rgba(147, 112, 219, 0.15);
+    }
+
+    /* 标题区域 */
+    .dashboard-header {
+        font-family: 'Orbitron', sans-serif;
+        border-bottom: 1px solid var(--dash-border);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .dashboard-header h1 {
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        text-shadow: 0 0 10px var(--dash-glow);
+        margin: 0;
+    }
+
+    /* 1. 数据统计卡片 (HUD风格) */
+    .stat-card {
+        background: var(--dash-bg);
+        border: 1px solid var(--dash-border);
+        border-radius: 8px;
+        padding: 1.5rem;
+        height: 100%;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+        backdrop-filter: blur(10px);
+    }
+    .stat-card::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+        background: var(--card-color);
+        box-shadow: 2px 0 10px var(--card-color);
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.3), inset 0 0 20px rgba(255,255,255,0.02);
+        border-color: var(--card-color);
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+        color: var(--card-color);
+        opacity: 0.8;
+        margin-bottom: 1rem;
+    }
+    .stat-title {
+        color: #8b949e;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .stat-value {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 2.5rem;
+        color: #fff;
+        font-weight: 700;
+        text-shadow: 0 0 10px var(--card-color);
+    }
+
+    /* 定义卡片颜色变量 */
+    .card-purple { --card-color: #9370DB; }
+    .card-green  { --card-color: #00ffaa; }
+    .card-yellow { --card-color: #ffcc00; }
+    .card-blue   { --card-color: #00d5ff; }
+
+    /* 2. 通用功能卡片 */
+    .panel-card {
+        background: var(--dash-bg);
+        border: 1px solid var(--dash-border);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .panel-header {
+        background: rgba(147, 112, 219, 0.1);
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--dash-border);
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 600;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .panel-body {
+        padding: 1.5rem;
+    }
+
+    /* 3. 表单元素重写 */
+    .form-select-custom {
+        background-color: rgba(0,0,0,0.4);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: #fff;
+        padding: 0.6rem 1rem;
+        border-radius: 4px 0 0 4px;
+    }
+    .form-select-custom:focus {
+        background-color: rgba(0,0,0,0.6);
+        border-color: #9370DB;
+        color: #fff;
+        box-shadow: none;
+    }
+    .btn-custom-go {
+        background-color: #9370DB;
+        border: 1px solid #9370DB;
+        color: white;
+        font-family: 'Orbitron', sans-serif;
+        padding: 0 1.5rem;
+        border-radius: 0 4px 4px 0;
+        transition: all 0.3s;
+    }
+    .btn-custom-go:hover {
+        background-color: #7b5cbd;
+        box-shadow: 0 0 15px rgba(147, 112, 219, 0.4);
+    }
+
+    /* 4. 状态列表 */
+    .status-list .list-group-item {
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        color: #ccc;
+        padding: 1rem 0;
+    }
+    .status-list .list-group-item:last-child { border-bottom: none; }
+    
+    /* LED 指示灯效果 */
+    .led-badge {
+        padding: 0.35em 0.8em;
+        border-radius: 50px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        position: relative;
+    }
+    .led-success {
+        background: rgba(0, 255, 170, 0.15);
+        color: #00ffaa;
+        border: 1px solid rgba(0, 255, 170, 0.3);
+        box-shadow: 0 0 8px rgba(0, 255, 170, 0.2);
+    }
+    .led-danger {
+        background: rgba(255, 85, 85, 0.15);
+        color: #ff5555;
+        border: 1px solid rgba(255, 85, 85, 0.3);
+        box-shadow: 0 0 8px rgba(255, 85, 85, 0.2);
+    }
+    .led-warning {
+        background: rgba(255, 204, 0, 0.15);
+        color: #ffcc00;
+        border: 1px solid rgba(255, 204, 0, 0.3);
+        box-shadow: 0 0 8px rgba(255, 204, 0, 0.2);
+    }
+
+</style>
+
+<!-- 适配 JS 的页面 ID 识别 (为了避免嵌套 body 标签的问题，使用 div 或 script 设置) -->
+<script>document.body.dataset.pageId = "dashboard";</script>
+
+<div class="container-fluid p-4">
+    <!-- 头部 -->
+    <div class="dashboard-header">
+        <h1>Dashboard <span style="font-size:0.5em; color:#666; vertical-align:middle;">// V3.0</span></h1>
+        <div class="text-muted small" style="font-family: monospace;">SYSTEM STATUS: ONLINE</div>
+    </div>
+
+    <!-- 1. 核心数据统计 HUD -->
+    <div class="row g-4 mb-5">
+        <!-- 服务器 -->
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card card-purple">
+                <i class="fa-solid fa-server stat-icon"></i>
+                <div class="stat-title">Active Servers</div>
+                <div class="stat-value" id="guild-count">--</div>
+            </div>
+        </div>
+        <!-- 用户 -->
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card card-green">
+                <i class="fa-solid fa-users stat-icon"></i>
+                <div class="stat-title">Total Members</div>
+                <div class="stat-value" id="user-count">--</div>
+            </div>
+        </div>
+        <!-- 延迟 -->
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card card-yellow">
+                <i class="fa-solid fa-satellite-dish stat-icon"></i>
+                <div class="stat-title">API Latency</div>
+                <div class="stat-value"><span id="latency">--</span> <span style="font-size:1rem">ms</span></div>
+            </div>
+        </div>
+        <!-- 指令 -->
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card card-blue">
+                <i class="fa-solid fa-terminal stat-icon"></i>
+                <div class="stat-title">Commands</div>
+                <div class="stat-value" id="command-count">--</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 2. 服务器选择器 -->
+        <div class="col-lg-7 mb-4">
+            <div class="panel-card h-100">
+                <div class="panel-header">
+                    <i class="fa-solid fa-sliders"></i> 服务器管理入口
+                </div>
+                <div class="panel-body d-flex flex-column justify-content-center">
+                    <p class="text-muted mb-4">
+                        {% if user.is_superuser %}
+                        <i class="fa-solid fa-shield-halved text-warning me-2"></i><strong>超级管理员模式</strong>：您可以访问机器人所在的所有服务器。
+                        {% else %}
+                        请选择您拥有管理权限的服务器进行配置。
+                        {% endif %}
+                    </p>
+                    <form id="guild-select-form">
+                        <div class="input-group input-group-lg">
+                            <select class="form-select form-select-custom" id="guild-selector">
+                                <option selected disabled>➜ 请选择目标服务器...</option>
+                                {% for guild in guilds %}
+                                    <option value="{{ guild.id }}">{{ guild.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-custom-go" type="submit">
+                                ENTER <i class="fa-solid fa-arrow-right ms-2"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 系统健康状态 -->
+        <div class="col-lg-5 mb-4">
+            <div class="panel-card h-100">
+                <div class="panel-header">
+                    <i class="fa-solid fa-microchip"></i> 核心模块状态
+                </div>
+                <div class="panel-body pt-0">
+                    <ul class="list-group list-group-flush status-list">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-brain me-2 text-secondary"></i> DeepSeek AI</span>
+                            {% if config_status.deepseek_ok %}
+                                <span class="led-badge led-success"><i class="fa-solid fa-check me-1"></i> Loaded</span>
+                            {% else %}
+                                <span class="led-badge led-danger"><i class="fa-solid fa-xmark me-1"></i> Missing</span>
+                            {% endif %}
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-brands fa-alipay me-2 text-secondary"></i> Alipay SDK</span>
+                            {% if config_status.alipay_sdk_ok %}
+                                <span class="led-badge led-success"><i class="fa-solid fa-check me-1"></i> Ready</span>
+                            {% else %}
+                                <span class="led-badge led-danger"><i class="fa-solid fa-xmark me-1"></i> Error</span>
+                            {% endif %}
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-money-bill-transfer me-2 text-secondary"></i> Payment Client</span>
+                            {% if config_status.alipay_client_ok %}
+                                <span class="led-badge led-success"><i class="fa-solid fa-check me-1"></i> Initialized</span>
+                            {% else %}
+                                <span class="led-badge led-danger"><i class="fa-solid fa-xmark me-1"></i> Offline</span>
+                            {% endif %}
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-key me-2 text-secondary"></i> Restart Key</span>
+                            {% if config_status.restart_pass_ok %}
+                                <span class="led-badge led-success"><i class="fa-solid fa-check me-1"></i> Set</span>
+                            {% else %}
+                                <span class="led-badge led-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i> Unset</span>
+                            {% endif %}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

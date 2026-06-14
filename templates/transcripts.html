@@ -1,0 +1,50 @@
+<!-- templates/transcripts.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<body data-page-id="transcripts" data-guild-id="{{ guild.id }}">
+
+<div class="container-fluid p-4">
+    <h1 class="h2"><i class="fas fa-history"></i> 聊天记录归档 <span class="text-muted small">[{{ guild.name }}]</span></h1>
+    <p class="text-muted">这里是已关闭票据的聊天记录列表。</p>
+
+    <div class="card">
+        <div class="card-header">
+            已关闭的票据
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>票据创建者</th>
+                            <th>关闭原因</th>
+                            <th>关闭时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in transcripts %}
+                        <tr>
+                            <td>{{ t.creator_name or ('未知用户 (' ~ t.creator_id ~ ')') }}</td>
+                            <td>{{ t.close_reason or '无' }}</td>
+                            <td>{{ t.closed_at | strftime }}</td>
+                            <td>
+                                <a href="{{ url_for('view_transcript', guild_id=guild.id, filename=t.transcript_filename) }}" class="btn btn-primary btn-sm" target="_blank">
+                                    <i class="fas fa-eye"></i> 查看记录
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">没有找到任何已归档的聊天记录。</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
