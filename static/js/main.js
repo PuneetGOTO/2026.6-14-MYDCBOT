@@ -597,9 +597,10 @@ function initializeSettingsPage() {
 }
 
 function initializeChannelControlPage() {
-    const GUILD_ID = document.body.dataset.guildId;
+    const pageRoot = document.querySelector('[data-page-id="channel_control"]') || document.body;
+    const GUILD_ID = document.body.dataset.guildId || pageRoot.dataset.guildId;
     if (!GUILD_ID) return;
-    const ownerId = document.body.dataset.ownerId; 
+    const ownerId = document.body.dataset.ownerId || pageRoot.dataset.ownerId; 
 
     console.log("[ChannelControl] Initializing...");
 
@@ -615,6 +616,15 @@ function initializeChannelControlPage() {
 
     socket.on('connect_error', (err) => {
         console.error("[ChannelControl] Socket error:", err);
+    });
+
+    socket.on('voice_control_error', (data) => {
+        alert("语音控制错误: " + (data.message || "未知错误"));
+        fetchVoiceStates();
+    });
+
+    socket.on('voice_control_status', (data) => {
+        console.log("[ChannelControl] Voice status:", data);
     });
 
     // ==========================================
@@ -786,6 +796,10 @@ function initializeChannelControlPage() {
                     return alert("浏览器不支持麦克风访问或未在 HTTPS 环境下。");
                 }
                 try {
+                    if (window.isSecureContext === false) {
+                        alert("麦克风需要 HTTPS 或 localhost 安全环境。请使用 https:// 域名访问面板。");
+                        return;
+                    }
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     mediaRecorder = new MediaRecorder(stream);
                     audioChunks = [];
@@ -814,7 +828,10 @@ function initializeChannelControlPage() {
                     recordBtn.innerHTML = '<i class="fa-solid fa-stop"></i> 停止录音';
                 } catch (err) {
                     console.error("Microphone access error:", err);
-                    alert("无法启动麦克风: " + err.message);
+                    const message = err.name === 'NotAllowedError'
+                        ? "浏览器拒绝了麦克风权限。请点击地址栏左侧的网站权限图标，允许麦克风后刷新页面。"
+                        : `无法启动麦克风: ${err.message}`;
+                    alert(message);
                 }
             }
         });

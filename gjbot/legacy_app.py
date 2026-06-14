@@ -5994,8 +5994,10 @@ if FLASK_AVAILABLE:
     def handle_voice_join(data):
         guild_id = _socket_check_auth(data, required_permission="page_channel_control")
         channel_id = _parse_socket_int(data, 'channel_id')
+        sid = request.sid
         if guild_id is None or channel_id is None:
-            print("[DEBUG SOCKET] ❌ 鉴权失败或频道ID无效")
+            if socketio:
+                socketio.emit('voice_control_error', {'message': '鉴权失败或频道ID无效。'}, room=sid)
             return
         print(f"\n[DEBUG SOCKET] >>> 收到 voice_control_join 请求: guild={guild_id}, channel={channel_id}")
 
@@ -6003,46 +6005,57 @@ if FLASK_AVAILABLE:
             print(f"[DEBUG SOCKET] 开始执行 join_task (Guild: {guild_id}, Channel: {channel_id})")
             guild = bot.get_guild(guild_id)
             if not guild:
-                print(f"[DEBUG SOCKET] ❌ 找不到服务器对象: {guild_id}")
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': '找不到服务器对象。'}, room=sid)
                 return
                 
             channel = guild.get_channel(channel_id)
-            if not channel:
-                print(f"[DEBUG SOCKET] ❌ 找不到频道对象: {channel_id}")
+            if not channel or not isinstance(channel, discord.VoiceChannel):
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': '找不到选中的语音频道。'}, room=sid)
                 return
-            
-            # 尝试获取 MusicCog
-            music_cog = bot.get_cog("音乐播放")
-            
+
             try:
-                # 优先使用 Lavalink 连接 (如果 MusicCog 存在)
-                if music_cog:
-                    print("[DEBUG SOCKET] 使用 MusicCog (Lavalink) 连接...")
-                    if not guild.voice_client:
-                        # 尚未连接 -> 连接
-                        await channel.connect(cls=wavelink.Player)
-                        print("[DEBUG SOCKET] ✅ Lavalink 连接成功")
-                    else:
-                        # 已连接 -> 移动
-                        await guild.voice_client.move_to(channel)
-                        print("[DEBUG SOCKET] ✅ Lavalink 移动成功")
+                # Channel Control is for TTS/recorded broadcasts, so use native Discord voice.
+                bot_member = guild.me or guild.get_member(bot.user.id)
+                if not bot_member:
+                    if socketio:
+                        socketio.emit('voice_control_error', {'message': '无法获取机器人在服务器中的成员状态，请稍后重试。'}, room=sid)
+                    return
+
+                permissions = channel.permissions_for(bot_member)
+                missing_permissions = []
+                if not permissions.connect:
+                    missing_permissions.append('连接')
+                if not permissions.speak:
+                    missing_permissions.append('说话')
+                if missing_permissions:
+                    if socketio:
+                        socketio.emit(
+                            'voice_control_error',
+                            {'message': f'机器人在 #{channel.name} 缺少权限: {", ".join(missing_permissions)}。'},
+                            room=sid,
+                        )
+                    return
+
+                if isinstance(guild.voice_client, wavelink.Player):
+                    await guild.voice_client.disconnect()
+                    await channel.connect()
+                elif guild.voice_client:
+                    await guild.voice_client.move_to(channel)
                 else:
-                    # 降级使用原生 Discord 语音连接
-                    print("[DEBUG SOCKET] MusicCog 未加载，使用原生 Discord 语音连接...")
-                    if guild.voice_client:
-                        await guild.voice_client.move_to(channel)
-                    else:
-                        await channel.connect()
-                    print("[DEBUG SOCKET] ✅ 原生语音连接成功")
+                    await channel.connect()
+                print("[DEBUG SOCKET] ✅ 原生语音连接成功")
 
                 # 通知前端状态更新
                 if socketio:
                     socketio.emit('voice_status_update', {'status': 'connected', 'channel_name': channel.name}, room=f'voice_{guild_id}')
+                    socketio.emit('voice_control_status', {'message': f'已连接到 #{channel.name}'}, room=sid)
                     
             except Exception as e:
-                print(f"[DEBUG SOCKET] ❌ 连接过程发生异常: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"[Voice Control] Failed to join voice channel {channel_id}: {e}")
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': f'连接语音频道失败: {e}'}, room=sid)
 
         # 提交任务到 Discord 事件循环
         if bot.loop and not bot.loop.is_closed():
@@ -6053,20 +6066,20 @@ if FLASK_AVAILABLE:
     @socketio.on('voice_control_leave')
     def handle_voice_leave(data):
         guild_id = _socket_check_auth(data, required_permission="page_channel_control")
+        sid = request.sid
         if guild_id is None:
             return
         async def leave_task():
             guild = bot.get_guild(guild_id)
-            if not guild or not guild.voice_client: return
+            if not guild or not guild.voice_client:
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': '机器人当前未连接语音频道。'}, room=sid)
+                return
             await guild.voice_client.disconnect()
             
-            # 清理音乐状态
-            music_cog = bot.get_cog("音乐播放")
-            if music_cog and guild_id in music_cog._guild_states_ref:
-                 music_cog._guild_states_ref[guild_id].voice_client = None
-
             if socketio:
                 socketio.emit('voice_status_update', {'status': 'disconnected'}, room=f'voice_{guild_id}')
+                socketio.emit('voice_control_status', {'message': '已断开语音连接。'}, room=sid)
                 
         asyncio.run_coroutine_threadsafe(leave_task(), bot.loop)
 
@@ -6074,15 +6087,23 @@ if FLASK_AVAILABLE:
     @socketio.on('voice_control_tts')
     def handle_voice_tts(data):
         guild_id = _socket_check_auth(data, required_permission="page_channel_control")
+        sid = request.sid
         if guild_id is None:
             return
-        text = data.get('text')
+        text = (data.get('text') or '').strip()
+        if not text:
+            if socketio:
+                socketio.emit('voice_control_error', {'message': '请输入要朗读的文字。'}, room=sid)
+            return
         
         async def play_tts():
             guild = bot.get_guild(guild_id)
             if not guild or not guild.voice_client or not guild.voice_client.is_connected():
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': '请先让机器人加入一个语音频道。'}, room=sid)
                 return # 未连接语音
 
+            filename = None
             try:
                 # 生成 TTS 文件
                 voice = "zh-CN-XiaoxiaoNeural" # 微软高质量女声
@@ -6096,8 +6117,17 @@ if FLASK_AVAILABLE:
                 
                 # 使用 FFmpeg 播放
                 guild.voice_client.play(discord.FFmpegPCMAudio(filename), after=lambda e: os.remove(filename) if os.path.exists(filename) else None)
+                if socketio:
+                    socketio.emit('voice_control_status', {'message': 'TTS 已发送。'}, room=sid)
             except Exception as e:
-                print(f"TTS 播放失败: {e}")
+                logging.exception(f"[Voice Control] TTS playback failed: {e}")
+                if filename and os.path.exists(filename):
+                    try:
+                        os.remove(filename)
+                    except OSError:
+                        pass
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': f'TTS 播放失败: {e}'}, room=sid)
 
         asyncio.run_coroutine_threadsafe(play_tts(), bot.loop)
 
@@ -6105,14 +6135,23 @@ if FLASK_AVAILABLE:
     @socketio.on('voice_control_blob')
     def handle_voice_blob(data):
         guild_id = _socket_check_auth(data, required_permission="page_channel_control")
+        sid = request.sid
         if guild_id is None:
             return
         audio_data = data.get('audio_blob') 
+        if not audio_data:
+            if socketio:
+                socketio.emit('voice_control_error', {'message': '没有收到录音数据。'}, room=sid)
+            return
         
         async def play_blob():
             guild = bot.get_guild(guild_id)
-            if not guild or not guild.voice_client: return
+            if not guild or not guild.voice_client or not guild.voice_client.is_connected():
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': '请先让机器人加入一个语音频道。'}, room=sid)
+                return
 
+            filename = None
             try:
                 # 保存为临时文件
                 filename = f"rec_{guild_id}_{int(time.time())}.webm"
@@ -6124,8 +6163,17 @@ if FLASK_AVAILABLE:
 
                 # FFmpeg 可以直接播放 WebM
                 guild.voice_client.play(discord.FFmpegPCMAudio(filename), after=lambda e: os.remove(filename) if os.path.exists(filename) else None)
+                if socketio:
+                    socketio.emit('voice_control_status', {'message': '语音广播已发送。'}, room=sid)
             except Exception as e:
-                print(f"语音消息播放失败: {e}")
+                logging.exception(f"[Voice Control] Recorded voice playback failed: {e}")
+                if filename and os.path.exists(filename):
+                    try:
+                        os.remove(filename)
+                    except OSError:
+                        pass
+                if socketio:
+                    socketio.emit('voice_control_error', {'message': f'语音广播播放失败: {e}'}, room=sid)
 
         asyncio.run_coroutine_threadsafe(play_blob(), bot.loop)
 
@@ -6301,7 +6349,7 @@ if FLASK_AVAILABLE:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault(
             "Permissions-Policy",
-            "camera=(), microphone=(), geolocation=()",
+            "camera=(), microphone=(self), geolocation=()",
         )
         return response
 
