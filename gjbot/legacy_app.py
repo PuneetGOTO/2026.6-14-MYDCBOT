@@ -76,9 +76,14 @@ def ensure_discord_voice_runtime() -> tuple[bool, str]:
         discord_voice_client.has_nacl = False
         return False, f"PyNaCl import failed: {type(exc).__name__}: {exc}"
 
+    try:
+        import davey  # noqa: F401
+    except Exception as exc:
+        return False, f"davey import failed: {type(exc).__name__}: {exc}"
+
     if not discord_voice_client.has_nacl:
         discord_voice_client.has_nacl = True
-    return True, "PyNaCl is available"
+    return True, "PyNaCl and davey are available"
 
 _voice_runtime_ok, _voice_runtime_message = ensure_discord_voice_runtime()
 logging.warning(
