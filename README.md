@@ -32,28 +32,46 @@ alipay_callback_handler.py     支付寶回調兼容入口
 
 架構說明可參考 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 環境需求
+## 部署前準備
 
-- Python 3.10 或更新版本
-- Discord Bot Application 與 Bot Token
-- Discord OAuth2 Application，用於 Web 面板登入
-- 可選：支付寶沙箱或正式應用憑證
-- 可選：DeepSeek 兼容 API Key，用於 AI 功能
-- 生產部署建議：Nginx、certbot、systemd、ffmpeg
+### 需要準備的帳號與資料
 
-安裝 Python 依賴：
+1. Discord Bot Token。
+2. Discord OAuth2 Client ID、Client Secret、Redirect URI。
+3. Web 面板超級管理員密碼。
+4. 一個固定且高強度的 `FLASK_SECRET_KEY`。
+5. 可選：DeepSeek API Key。
+6. 可選：支付寶 App ID、公鑰、私鑰、回調驗簽公鑰、Notify URL。
+7. 生產環境建議準備一個域名，並使用 HTTPS。
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+### Discord 設定
+
+1. 到 Discord Developer Portal 建立 Application。
+2. 在 Bot 頁面建立 Bot，複製 Bot Token。
+3. 啟用需要的 Privileged Gateway Intents，例如 Server Members Intent、Message Content Intent。
+4. 在 OAuth2 頁面設定 Redirect URI，例如：
+
+```text
+https://bot.example.com/callback
 ```
 
-Linux 或 macOS 啟用虛擬環境：
+5. 產生 Bot 邀請連結，至少授予機器人所需的伺服器管理、身份組、頻道、訊息、語音等權限。
+
+### 產生 FLASK_SECRET_KEY
+
+Linux / macOS：
 
 ```bash
-source venv/bin/activate
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+Windows PowerShell：
+
+```powershell
+py -c "import secrets; print(secrets.token_hex(32))"
+```
+
+把輸出的值填入 `.env` 的 `FLASK_SECRET_KEY`。
 
 ## 環境變量
 
@@ -103,41 +121,533 @@ ALIPAY_CALLBACK_PORT=8080
 ECONOMY_DEFAULT_BALANCE=100
 ```
 
-## 本地運行
+## 本地測試
 
-先執行靜態檢查與 smoke test：
+### Windows 本地測試
+
+```powershell
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
+cd 2026.6-14-MYDCBOT
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+建立 `.env` 後執行檢查：
+
+```powershell
+python -m gjbot --check
+python scripts\smoke_check.py
+```
+
+啟動：
+
+```powershell
+python -m gjbot
+```
+
+如果 PowerShell 不允許啟用虛擬環境，先用系統管理員 PowerShell 執行：
+
+```powershell
+Set-ExecutionPolicy RemoteSigned
+```
+
+### Linux / macOS 本地測試
+
+```bash
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
+cd 2026.6-14-MYDCBOT
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+建立 `.env` 後執行：
 
 ```bash
 python -m gjbot --check
 python scripts/smoke_check.py
+python -m gjbot
 ```
 
-啟動完整運行環境：
+## Ubuntu / Debian 部署
+
+### 方法一：使用一鍵部署腳本
+
+適用於 Ubuntu 22.04+、Debian 12+，並建議使用乾淨 VPS。
+
+1. 指向域名 DNS A 記錄到伺服器 IP。
+2. 登入伺服器。
+3. 安裝 Git 與 curl。
+
+```bash
+sudo apt update
+sudo apt install -y git curl
+```
+
+4. 下載專案。
+
+```bash
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
+cd 2026.6-14-MYDCBOT
+```
+
+5. 檢查 `get_bot.sh` 裡的設定。
+
+```bash
+nano get_bot.sh
+```
+
+至少確認：
+
+```bash
+GIT_REPO_URL="https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git"
+PROJECT_DIR_NAME="GJTEAM-BOT"
+BOT_USER="gjteambot"
+SERVICE_NAME="gjteam-bot"
+```
+
+6. 執行部署。
+
+```bash
+chmod +x get_bot.sh
+sudo ./get_bot.sh
+```
+
+腳本會要求輸入域名、Discord Token、Web 管理密碼、OAuth2 憑證、支付寶資訊等。
+
+7. 查看服務狀態。
+
+```bash
+sudo systemctl status gjteam-bot
+sudo journalctl -u gjteam-bot -f
+```
+
+8. 常用管理命令。
+
+```bash
+sudo systemctl restart gjteam-bot
+sudo systemctl stop gjteam-bot
+sudo systemctl start gjteam-bot
+```
+
+注意：如果 certbot 申請 HTTPS 失敗，腳本會停止，不會讓 Web 面板用 HTTP 明文繼續運行。
+
+### 方法二：Ubuntu / Debian 手動部署
+
+1. 安裝系統依賴。
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv nginx ffmpeg build-essential certbot python3-certbot-nginx
+```
+
+2. 建立專用使用者。
+
+```bash
+sudo useradd -r -m -d /home/gjteambot -s /bin/bash gjteambot
+sudo su - gjteambot
+```
+
+3. 下載專案與安裝依賴。
+
+```bash
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git GJTEAM-BOT
+cd GJTEAM-BOT
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+4. 建立 `.env`。
+
+```bash
+nano .env
+```
+
+填入前面「環境變量」章節的內容。
+
+5. 回到 root 或 sudo 使用者，建立 systemd 服務。
+
+```bash
+exit
+sudo nano /etc/systemd/system/gjteam-bot.service
+```
+
+貼上：
+
+```ini
+[Unit]
+Description=GJBot Discord Bot and Web Panel
+After=network.target
+
+[Service]
+User=gjteambot
+Group=gjteambot
+WorkingDirectory=/home/gjteambot/GJTEAM-BOT
+ExecStart=/home/gjteambot/GJTEAM-BOT/venv/bin/python -m gjbot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+6. 啟動服務。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable gjteam-bot
+sudo systemctl start gjteam-bot
+sudo journalctl -u gjteam-bot -f
+```
+
+7. 設定 Nginx。
+
+```bash
+sudo nano /etc/nginx/sites-available/gjbot
+```
+
+範例：
+
+```nginx
+server {
+    listen 80;
+    server_name bot.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /my-custom-socket-path {
+        proxy_pass http://127.0.0.1:5000/my-custom-socket-path;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /alipay/notify {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        alias /home/gjteambot/GJTEAM-BOT/static/;
+        expires 1d;
+        add_header Cache-Control "public";
+    }
+}
+```
+
+啟用：
+
+```bash
+sudo ln -s /etc/nginx/sites-available/gjbot /etc/nginx/sites-enabled/gjbot
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+8. 申請 HTTPS。
+
+```bash
+sudo certbot --nginx -d bot.example.com
+```
+
+9. 更新 `.env` 中的 URL 為 HTTPS。
+
+```env
+DISCORD_REDIRECT_URI=https://bot.example.com/callback
+ALIPAY_NOTIFY_URL=https://bot.example.com/alipay/notify
+```
+
+更新後重啟：
+
+```bash
+sudo systemctl restart gjteam-bot
+```
+
+## RHEL / Rocky Linux / AlmaLinux / CentOS 部署
+
+以下命令以 Rocky Linux 9 / AlmaLinux 9 為例。
+
+1. 安裝依賴。
+
+```bash
+sudo dnf update -y
+sudo dnf install -y git python3 python3-pip nginx ffmpeg gcc gcc-c++ make certbot python3-certbot-nginx
+```
+
+如果系統沒有 `ffmpeg`，可能需要啟用 EPEL / RPM Fusion：
+
+```bash
+sudo dnf install -y epel-release
+```
+
+2. 建立使用者與下載專案。
+
+```bash
+sudo useradd -r -m -d /home/gjteambot -s /bin/bash gjteambot
+sudo su - gjteambot
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git GJTEAM-BOT
+cd GJTEAM-BOT
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+3. 建立 `.env`。
+
+```bash
+nano .env
+```
+
+4. 建立 systemd 服務。
+
+```bash
+exit
+sudo nano /etc/systemd/system/gjteam-bot.service
+```
+
+內容同 Ubuntu 手動部署的 systemd 範例。
+
+5. 啟動服務。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now gjteam-bot
+sudo journalctl -u gjteam-bot -f
+```
+
+6. 設定防火牆。
+
+```bash
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+```
+
+7. 設定 Nginx。
+
+RHEL 系通常可放在：
+
+```bash
+sudo nano /etc/nginx/conf.d/gjbot.conf
+```
+
+內容可使用 Ubuntu Nginx 範例。
+
+測試並重載：
+
+```bash
+sudo nginx -t
+sudo systemctl enable --now nginx
+sudo systemctl reload nginx
+```
+
+8. 申請 HTTPS。
+
+```bash
+sudo certbot --nginx -d bot.example.com
+```
+
+## Windows 部署
+
+Windows 適合測試或內部使用。生產環境仍建議用 Linux + Nginx + HTTPS。
+
+### 方法一：PowerShell 前台運行
+
+```powershell
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
+cd 2026.6-14-MYDCBOT
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python -m gjbot --check
+python scripts\smoke_check.py
+python -m gjbot
+```
+
+### 方法二：使用 NSSM 設成 Windows 服務
+
+1. 下載 NSSM：https://nssm.cc/download
+2. 解壓後把 `nssm.exe` 放到固定位置，例如 `C:\nssm\nssm.exe`。
+3. 先完成專案下載、虛擬環境與 `.env` 設定。
+4. 使用系統管理員 PowerShell：
+
+```powershell
+C:\nssm\nssm.exe install GJBot
+```
+
+NSSM 視窗設定：
+
+```text
+Application path: C:\Path\To\2026.6-14-MYDCBOT\venv\Scripts\python.exe
+Startup directory: C:\Path\To\2026.6-14-MYDCBOT
+Arguments: -m gjbot
+```
+
+5. 啟動服務：
+
+```powershell
+C:\nssm\nssm.exe start GJBot
+```
+
+6. 停止或重啟：
+
+```powershell
+C:\nssm\nssm.exe stop GJBot
+C:\nssm\nssm.exe restart GJBot
+```
+
+### Windows 反向代理
+
+如果要公開 Web 面板，建議使用 Caddy 或 Nginx for Windows 做 HTTPS 反向代理。
+
+Caddyfile 範例：
+
+```caddyfile
+bot.example.com {
+    reverse_proxy 127.0.0.1:5000
+
+    handle_path /alipay/notify {
+        reverse_proxy 127.0.0.1:8080
+    }
+}
+```
+
+注意：Socket.IO path 是 `/my-custom-socket-path`，反向代理必須支援 WebSocket。
+
+## macOS 部署
+
+macOS 適合測試或小型常駐，不建議作為公開生產環境。
+
+1. 安裝 Homebrew。
+2. 安裝依賴。
+
+```bash
+brew install python git ffmpeg
+```
+
+3. 下載並安裝 Python 依賴。
+
+```bash
+git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
+cd 2026.6-14-MYDCBOT
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+4. 建立 `.env` 並測試。
+
+```bash
+python -m gjbot --check
+python scripts/smoke_check.py
+python -m gjbot
+```
+
+5. 如果要常駐，可建立 launchd plist。
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+nano ~/Library/LaunchAgents/com.gjbot.plist
+```
+
+範例：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gjbot</string>
+    <key>WorkingDirectory</key>
+    <string>/absolute/path/to/2026.6-14-MYDCBOT</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/absolute/path/to/2026.6-14-MYDCBOT/venv/bin/python</string>
+        <string>-m</string>
+        <string>gjbot</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+```
+
+啟用：
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.gjbot.plist
+launchctl start com.gjbot
+```
+
+## 雲平台部署注意事項
+
+### Railway / Render / Fly.io / 其他 PaaS
+
+此專案可以在支援 Python 的平台上運行，但要注意：
+
+- 啟動命令使用：
 
 ```bash
 python -m gjbot
 ```
 
-運行時會啟動 Discord Bot。如果 Web 面板配置完整，會同時啟動 Web 面板；如果支付寶配置完整，會同時啟動支付寶回調監聽器。
+- 必須在平台環境變量中設定 `.env` 內容。
+- Web 面板使用 `PORT`，平台通常會自動提供。
+- 支付寶回調如果需要獨立 8080 端口，某些 PaaS 不支援多端口。這種情況建議改為同一個 Flask app 路由，或使用 VPS。
+- SQLite 在部分 PaaS 上可能不是持久化儲存。若平台檔案系統會重置，經濟資料、票據資料與充值資料會遺失。
+- 生產部署建議使用有持久磁碟的 VPS，或後續改成 PostgreSQL。
 
-## 部署
+### Docker
 
-`get_bot.sh` 是面向 Ubuntu 的一鍵部署腳本，會建立專用系統使用者、Python 虛擬環境、Nginx 反向代理、certbot TLS 憑證，以及 systemd 服務。
+目前專案沒有內建 Dockerfile。若要自行 Docker 化，基本方向是：
 
-部署前請檢查 `get_bot.sh` 內的：
-
-```bash
-GIT_REPO_URL
-PROJECT_DIR_NAME
-BOT_USER
-SERVICE_NAME
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN apt-get update && apt-get install -y ffmpeg build-essential && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["python", "-m", "gjbot"]
 ```
 
-重要部署行為：
+Docker 部署時請用環境變量或 secret manager 注入 `.env`，不要把 `.env` COPY 進映像。
 
-- 腳本會自動生成 `FLASK_SECRET_KEY`。
-- 如果 TLS 憑證申請失敗，腳本會停止，不會讓 Web 面板、OAuth 回調或支付回調以 HTTP 明文方式繼續運行。
-- `.env`、支付寶私鑰、資料庫、聊天記錄、日誌、Python 快取都已被 `.gitignore` 排除。
+## Nginx 與 HTTPS 檢查清單
+
+- `DISCORD_REDIRECT_URI` 必須和 Discord Developer Portal 完全一致。
+- `ALIPAY_NOTIFY_URL` 必須是可被支付寶訪問的 HTTPS URL。
+- Nginx 要轉發 `X-Forwarded-Proto`，專案已使用 `ProxyFix`。
+- Socket.IO 需要 WebSocket Upgrade header。
+- Web 面板不要直接暴露 HTTP。
+- 憑證更新可用：
+
+```bash
+sudo certbot renew --dry-run
+```
 
 ## 安全設計
 
@@ -162,10 +672,41 @@ python -m py_compile role_manager_bot.py database.py music_cog.py alipay_callbac
 
 `scripts/smoke_check.py` 使用臨時資料庫，不需要 Discord 網路連線。
 
-## 常見注意事項
+## 常見問題
 
-- 如果 Web 面板沒有啟動，先確認 `FLASK_SECRET_KEY`、`WEB_ADMIN_PASSWORD`、`DISCORD_CLIENT_ID`、`DISCORD_CLIENT_SECRET`、`DISCORD_REDIRECT_URI` 是否完整。
-- 如果支付寶回調驗證失敗，檢查 `ALIPAY_PUBLIC_KEY_CONTENT_FOR_CALLBACK_VERIFY` 與支付寶應用是否匹配。
-- 如果 Discord OAuth 登入失敗，確認 Discord Developer Portal 裡設定的 Redirect URI 與 `DISCORD_REDIRECT_URI` 完全一致。
-- 生產環境應只使用 HTTPS，不建議暴露 HTTP 管理面板。
+### Web 面板沒有啟動
+
+檢查：
+
+- `FLASK_SECRET_KEY`
+- `WEB_ADMIN_PASSWORD`
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
+- `DISCORD_REDIRECT_URI`
+- Web port 是否被佔用
+
+### Discord OAuth 登入失敗
+
+確認 Discord Developer Portal 裡設定的 Redirect URI 與 `.env` 的 `DISCORD_REDIRECT_URI` 完全一致，包括 `https`、域名、路徑與尾斜線。
+
+### 支付寶回調驗證失敗
+
+檢查：
+
+- `ALIPAY_APP_ID`
+- `ALIPAY_PUBLIC_KEY_CONTENT_FOR_CALLBACK_VERIFY`
+- `ALIPAY_NOTIFY_URL`
+- 沙箱與正式環境公鑰是否混用
+
+### 音樂功能無法播放
+
+檢查：
+
+- `ffmpeg` 是否已安裝
+- Lavalink / wavelink 相關配置是否完整
+- Discord Bot 是否有語音頻道連線與發言權限
+
+### 資料重啟後遺失
+
+確認目前部署環境是否有持久化磁碟。SQLite 資料庫檔不要放在會被平台重置的臨時目錄。
 

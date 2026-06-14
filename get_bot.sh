@@ -12,7 +12,7 @@ set -o pipefail
 
 # --- 变量定义 ---
 # 【【【你需要修改这里】】】
-GIT_REPO_URL="https://github.com/PuneetGOTO/WEBVABOT.git" # 你的公开Git仓库地址
+GIT_REPO_URL="https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git" # 你的公开Git仓库地址
 PROJECT_DIR_NAME="GJTEAM-BOT" # Git仓库克隆下来后的文件夹名
 BOT_USER="gjteambot"
 PYTHON_COMMAND="python3"
