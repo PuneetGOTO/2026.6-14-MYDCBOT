@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import wavelink
+import asyncio
+import logging
 from typing import cast, Dict, Any, Optional
 
 # 注意：database 模块将在具体指令中导入，以避免循环导入问题
@@ -9,6 +11,7 @@ from typing import cast, Dict, Any, Optional
 class MusicCog(commands.Cog, name="音乐播放"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._playback_warnings: Dict[int, str] = {}
 
     async def cog_load(self):
         print("MusicCog (Lavalink/SoundCloud/歌单系统) 已挂载。")
@@ -25,6 +28,126 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if guild.voice_client and isinstance(guild.voice_client, wavelink.Player):
             return guild.voice_client
         return None
+
+    def clear_playback_warning(self, guild_id: Optional[int]) -> None:
+        if guild_id is not None:
+            self._playback_warnings.pop(int(guild_id), None)
+
+    async def connect_player(self, channel) -> wavelink.Player:
+        """Connect a Wavelink player, replacing native Discord voice clients when needed."""
+        guild = channel.guild
+        existing_voice = guild.voice_client
+
+        if isinstance(existing_voice, wavelink.Player):
+            player = existing_voice
+            player_channel = getattr(player, "channel", None)
+            try:
+                node_connected = player.node.status == wavelink.NodeStatus.CONNECTED
+            except Exception:
+                node_connected = False
+
+            if not player.connected or not player_channel or not node_connected:
+                logging.info(
+                    "[Music] Recreating stale Wavelink player in guild %s.",
+                    guild.id,
+                )
+                await player.disconnect()
+                await asyncio.sleep(0.5)
+                existing_voice = None
+            elif player_channel.id != channel.id:
+                await player.move_to(channel)
+                return player
+            else:
+                return player
+
+        if existing_voice:
+            logging.info(
+                "[Music] Replacing native voice client with Wavelink player in guild %s.",
+                guild.id,
+            )
+            await existing_voice.disconnect(force=True)
+            await asyncio.sleep(0.5)
+
+        self.clear_playback_warning(guild.id)
+        return await channel.connect(cls=wavelink.Player)
+
+    def _empty_state(self, guild: Optional[discord.Guild] = None) -> Dict[str, Any]:
+        voice_warning = None
+        voice_channel = None
+        if guild and guild.voice_client and not isinstance(guild.voice_client, wavelink.Player):
+            channel = getattr(guild.voice_client, "channel", None)
+            if channel:
+                voice_channel = {"id": str(channel.id), "name": channel.name}
+                voice_warning = f"机器人当前由信道控制连接在 #{channel.name}，音乐播放需要在音乐页重新加入频道。"
+            else:
+                voice_warning = "机器人当前不是音乐播放器连接，请在音乐页重新加入频道。"
+
+        return {
+            'is_playing': False,
+            'is_paused': False,
+            'connected': False,
+            'node_connected': False,
+            'voice_channel': voice_channel,
+            'voice_warning': voice_warning,
+            'volume': 100,
+            'loop_mode': 'none',
+            'current_song': None,
+            'queue': [],
+        }
+
+    def _voice_status(self, player: wavelink.Player) -> Dict[str, Any]:
+        guild = player.guild
+        voice_channel = None
+        voice_warning = None
+        playback_warning = None
+
+        connected = bool(getattr(player, "connected", False))
+        try:
+            node_connected = player.node.status == wavelink.NodeStatus.CONNECTED
+        except Exception:
+            node_connected = False
+
+        bot_member = None
+        voice_state = None
+        if guild:
+            if guild.id in self._playback_warnings:
+                playback_warning = self._playback_warnings[guild.id]
+            bot_user = self.bot.user
+            bot_member = guild.me or (guild.get_member(bot_user.id) if bot_user else None)
+            voice_state = getattr(bot_member, "voice", None) if bot_member else None
+
+        if voice_state and voice_state.channel:
+            voice_channel = {"id": str(voice_state.channel.id), "name": voice_state.channel.name}
+        else:
+            player_channel = getattr(player, "channel", None)
+            if player_channel:
+                voice_channel = {"id": str(player_channel.id), "name": player_channel.name}
+
+        if not node_connected:
+            voice_warning = "Lavalink 节点未连接，无法播放音乐。"
+        elif not connected:
+            voice_warning = "音乐播放器未连接语音频道。"
+        elif not guild or not bot_member:
+            voice_warning = "无法获取机器人在服务器中的语音状态。"
+        elif not voice_state or not voice_state.channel:
+            voice_warning = "机器人未连接语音频道。"
+        elif getattr(voice_state, "mute", False) or getattr(voice_state, "self_mute", False):
+            voice_warning = "机器人在语音频道已被静音，无法发声。"
+        elif getattr(voice_state, "suppress", False):
+            voice_warning = "机器人在舞台频道被禁止发言，无法发声。"
+        else:
+            permissions = voice_state.channel.permissions_for(bot_member)
+            if not permissions.speak:
+                voice_warning = f"机器人在 #{voice_state.channel.name} 没有说话权限。"
+            elif playback_warning:
+                voice_warning = playback_warning
+
+        return {
+            'connected': connected,
+            'node_connected': node_connected,
+            'voice_channel': voice_channel,
+            'voice_warning': voice_warning,
+        }
 
     def to_dict(self, player: wavelink.Player) -> Dict[str, Any]:
         """
@@ -52,9 +175,24 @@ class MusicCog(commands.Cog, name="音乐播放"):
         elif player.queue.mode == wavelink.QueueMode.loop_all:
             loop_mode_str = "queue"
 
+        voice_status = self._voice_status(player)
+        is_paused = bool(player.paused)
+        is_playing = bool(
+            current_track
+            and player.playing
+            and not is_paused
+            and voice_status['connected']
+            and voice_status['node_connected']
+            and not voice_status['voice_warning']
+        )
+
         return {
-            'is_playing': player.playing,
-            'is_paused': player.paused,
+            'is_playing': is_playing,
+            'is_paused': is_paused,
+            'connected': voice_status['connected'],
+            'node_connected': voice_status['node_connected'],
+            'voice_channel': voice_status['voice_channel'],
+            'voice_warning': voice_status['voice_warning'],
             'volume': player.volume,
             'loop_mode': loop_mode_str,
             'current_song': current_data,
@@ -70,11 +208,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         
         if not player:
             # 如果没有播放器，发送空状态重置前端
-            empty_state = {
-                'is_playing': False, 'is_paused': False, 'volume': 100, 
-                'loop_mode': 'none', 'current_song': None, 'queue': []
-            }
-            self.bot.dispatch('music_state_update', guild_id, empty_state)
+            self.bot.dispatch('music_state_update', guild_id, self._empty_state(guild))
             return
 
         # 发送实时状态
@@ -86,7 +220,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         """当歌曲播放结束时触发"""
         player = payload.player
-        if not player: return
+        if not player or not player.guild: return
 
         # 核心逻辑：自动播放下一首
         if not player.queue.is_empty:
@@ -100,8 +234,45 @@ class MusicCog(commands.Cog, name="音乐播放"):
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         """当歌曲开始播放时触发"""
         player = payload.player
-        if not player: return
+        if not player or not player.guild: return
+        self.clear_playback_warning(player.guild.id)
         # 立即更新 Web 面板，显示当前歌曲信息
+        await self.broadcast_music_state(player.guild.id)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+        """When Lavalink reports a track failure, stop showing it as actively playing."""
+        player = getattr(payload, "player", None)
+        track = getattr(payload, "track", None)
+        exception = getattr(payload, "exception", None)
+        if not player or not player.guild:
+            return
+
+        self._playback_warnings[player.guild.id] = "当前歌曲播放失败，请跳过或重新点歌。"
+        logging.error(
+            "[Music] Lavalink track exception guild=%s track=%s exception=%s",
+            player.guild.id,
+            getattr(track, "title", "unknown"),
+            exception,
+        )
+        await self.broadcast_music_state(player.guild.id)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
+        """When Lavalink reports a stuck track, surface that state to the web panel."""
+        player = getattr(payload, "player", None)
+        track = getattr(payload, "track", None)
+        threshold = getattr(payload, "threshold", None)
+        if not player or not player.guild:
+            return
+
+        self._playback_warnings[player.guild.id] = "当前歌曲播放卡住，请跳过或重新点歌。"
+        logging.error(
+            "[Music] Lavalink track stuck guild=%s track=%s threshold=%s",
+            player.guild.id,
+            getattr(track, "title", "unknown"),
+            threshold,
+        )
         await self.broadcast_music_state(player.guild.id)
 
     @commands.Cog.listener()
@@ -110,7 +281,12 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if member.id == self.bot.user.id:
             if before.channel and not after.channel:
                 await self.broadcast_music_state(member.guild.id)
-            elif before.channel != after.channel:
+            elif (
+                before.channel != after.channel
+                or getattr(before, "mute", False) != getattr(after, "mute", False)
+                or getattr(before, "self_mute", False) != getattr(after, "self_mute", False)
+                or getattr(before, "suppress", False) != getattr(after, "suppress", False)
+            ):
                 await self.broadcast_music_state(member.guild.id)
 
     # --- 音乐指令组 ---
@@ -126,22 +302,28 @@ class MusicCog(commands.Cog, name="音乐播放"):
             return
 
         # 获取或创建播放器
-        if not interaction.guild.voice_client:
+        player = self.get_player(interaction.guild)
+        target_channel = interaction.user.voice.channel
+        node_connected = False
+        if player:
             try:
-                player: wavelink.Player = await interaction.user.voice.channel.connect(cls=wavelink.Player)
+                node_connected = player.node.status == wavelink.NodeStatus.CONNECTED
+            except Exception:
+                node_connected = False
+
+        if (
+            not player
+            or not player.connected
+            or not getattr(player, "channel", None)
+            or not node_connected
+        ):
+            try:
+                player = await self.connect_player(target_channel)
             except Exception as e:
                 await interaction.followup.send(f"❌ 无法连接语音频道: {e}", ephemeral=True)
                 return
         else:
-            player: wavelink.Player = self.get_player(interaction.guild)
-            if not player:
-                 try:
-                    player = await interaction.user.voice.channel.connect(cls=wavelink.Player)
-                 except Exception as e:
-                    await interaction.followup.send(f"❌ 连接错误: {e}", ephemeral=True)
-                    return
-            
-            if player.channel.id != interaction.user.voice.channel.id:
+            if player.channel.id != target_channel.id:
                 await interaction.followup.send(f"❌ 机器人正在另一个频道 ({player.channel.mention}) 播放。", ephemeral=True)
                 return
 
@@ -174,10 +356,11 @@ class MusicCog(commands.Cog, name="音乐播放"):
             source_icon = "☁️" if "soundcloud" in (track.uri or "") else "🎵"
             await interaction.followup.send(f"✅ {source_icon} 已添加 **{track.title}** 到队列。", ephemeral=True)
 
-        if not player.playing:
-            if not player.queue.is_empty:
-                next_track = player.queue.get()
-                await player.play(next_track)
+        if player.paused:
+            await player.pause(False)
+        if not player.current and not player.queue.is_empty:
+            next_track = player.queue.get()
+            await player.play(next_track)
         
         await self.broadcast_music_state(interaction.guild_id)
 
@@ -195,6 +378,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
     async def stop(self, interaction: discord.Interaction):
         player = self.get_player(interaction.guild)
         if player:
+            self.clear_playback_warning(interaction.guild_id)
             player.queue.clear()
             await player.skip(force=True)
             await player.disconnect()

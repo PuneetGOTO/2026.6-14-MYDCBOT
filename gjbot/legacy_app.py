@@ -1871,15 +1871,9 @@ async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
     player = payload.player
     if not player: return
 
-    # 尝试播放下一首 
-    # (Wavelink 的 Queue 模式会自动处理循环，这里负责从队列取出并播放)
-    if not player.queue.is_empty:
-        next_track = player.queue.get()
-        await player.play(next_track)
-    
-    # 广播状态更新给 Web 前端
+    # MusicCog owns queue advancement; this legacy handler only mirrors state to Web.
     music_cog = bot.get_cog("音乐播放")
-    if music_cog:
+    if music_cog and player.guild:
         await music_cog.broadcast_music_state(player.guild.id)
 
 @bot.event
@@ -5814,7 +5808,25 @@ if FLASK_AVAILABLE:
                         socketio.emit('music_error', {'message': '服务器未找到。'}, room=sid)
                     return
 
-                player = guild.voice_client 
+                player = music_cog.get_player(guild)
+
+                async def connect_music_player(channel):
+                    nonlocal player
+                    player = await music_cog.connect_player(channel)
+                    return player
+
+                def music_player_ready(candidate):
+                    if not isinstance(candidate, wavelink.Player):
+                        return False
+                    if not getattr(candidate, "connected", False) or not getattr(candidate, "channel", None):
+                        return False
+                    try:
+                        return candidate.node.status == wavelink.NodeStatus.CONNECTED
+                    except Exception:
+                        return False
+
+                if player and not music_player_ready(player):
+                    player = None
 
                 # === 歌单相关操作 (无需 Player 连接也可以查看/删除，但保存/加载需要) ===
                 
@@ -5866,15 +5878,18 @@ if FLASK_AVAILABLE:
                     if not player:
                         target_channel_id = data.get('target_channel_id') # 前端需要传这个，或者后端自动找
                         if target_channel_id:
-                            ch = guild.get_channel(int(target_channel_id))
-                            if ch: 
-                                player = await ch.connect(cls=wavelink.Player)
-                        
+                            try:
+                                ch = guild.get_channel(int(target_channel_id))
+                            except (TypeError, ValueError):
+                                ch = None
+                            if ch and isinstance(ch, discord.VoiceChannel):
+                                player = await connect_music_player(ch)
+
                         # 如果还没连接上 (且没传ID或ID无效)，尝试找第一个有人的频道
                         if not player:
                              for vc in guild.voice_channels:
                                 if len(vc.members) > 0:
-                                    player = await vc.connect(cls=wavelink.Player)
+                                    player = await connect_music_player(vc)
                                     break
                     
                     if not player:
@@ -5900,7 +5915,9 @@ if FLASK_AVAILABLE:
                                 count += 1
                         except: continue
                     
-                    if not player.playing and not player.queue.is_empty:
+                    if player.paused:
+                        await player.pause(False)
+                    if not player.current and not player.queue.is_empty:
                         await player.play(player.queue.get())
                     
                     await music_cog.broadcast_music_state(guild_id)
@@ -5941,16 +5958,16 @@ if FLASK_AVAILABLE:
                             )
                         return
 
-                    if player:
-                        await player.move_to(channel)
-                    else:
-                        await channel.connect(cls=wavelink.Player)
+                    player = await connect_music_player(channel)
                     if socketio:
                         socketio.emit('music_error', {'message': f'已加入 #{channel.name}', 'type': 'success', 'action': 'join'}, room=sid)
                     await music_cog.broadcast_music_state(guild_id)
 
                 elif action == 'play':
-                    query = data.get('query')
+                    query = (data.get('query') or '').strip()
+                    if not query:
+                        if socketio: socketio.emit('music_error', {'message': '请输入要播放的歌曲或链接'}, room=sid)
+                        return
                     if not player:
                         if socketio: socketio.emit('music_error', {'message': '请先在右上角选择频道并点击“加入”'}, room=sid)
                         return
@@ -5970,9 +5987,10 @@ if FLASK_AVAILABLE:
                         track = tracks[0]
                         await player.queue.put_wait(track)
 
-                    if not player.playing:
-                        if not player.queue.is_empty:
-                            await player.play(player.queue.get())
+                    if player.paused:
+                        await player.pause(False)
+                    if not player.current and not player.queue.is_empty:
+                        await player.play(player.queue.get())
                     
                     await music_cog.broadcast_music_state(guild_id)
 
@@ -5981,6 +5999,7 @@ if FLASK_AVAILABLE:
 
                 elif action == 'stop':
                     if player:
+                        music_cog.clear_playback_warning(guild_id)
                         player.queue.clear()
                         await player.skip(force=True)
                         await player.disconnect()

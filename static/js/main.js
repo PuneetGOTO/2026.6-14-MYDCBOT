@@ -1637,17 +1637,24 @@ function initializeMusicControlPage() {
 
     // 3. 播放器状态同步处理
     socket.on('music_status_update', (data) => {
+        const voiceWarning = data.voice_warning || '';
+        const queue = Array.isArray(data.queue) ? data.queue : [];
+        if (els.artist) {
+            els.artist.title = voiceWarning;
+            els.artist.classList.toggle('text-warning', Boolean(voiceWarning));
+        }
+
         // 更新当前歌曲信息
         if (data.current_song) {
             els.title.textContent = data.current_song.title || '未知标题';
-            els.artist.textContent = data.current_song.uploader || '未知艺术家';
+            els.artist.textContent = voiceWarning || (data.is_paused ? '已暂停' : (data.current_song.uploader || '未知艺术家'));
             
             const thumbUrl = data.current_song.thumbnail || 'https://cdn.discordapp.com/embed/avatars/0.png';
             if (els.cover.src !== thumbUrl) els.cover.src = thumbUrl;
             els.bg.style.backgroundImage = `url('${thumbUrl}')`;
             
             // 播放状态动画控制
-            if (data.is_playing) {
+            if (data.is_playing && !voiceWarning) {
                 els.cover.classList.add('playing-anim');
                 els.playIcon.className = 'fa-solid fa-pause';
             } else {
@@ -1657,7 +1664,7 @@ function initializeMusicControlPage() {
         } else {
             // 空闲状态
             els.title.textContent = '未在播放';
-            els.artist.textContent = '--';
+            els.artist.textContent = voiceWarning || '--';
             els.cover.src = 'https://cdn.discordapp.com/embed/avatars/0.png';
             els.bg.style.backgroundImage = 'none';
             els.cover.classList.remove('playing-anim');
@@ -1677,8 +1684,8 @@ function initializeMusicControlPage() {
         }
 
         // 更新播放队列列表
-        els.qCount.textContent = `${data.queue.length} 首歌曲`;
-        if (data.queue.length === 0) {
+        els.qCount.textContent = `${queue.length} 首歌曲`;
+        if (queue.length === 0) {
             els.queue.innerHTML = `
                 <div class="text-center text-muted mt-5 pt-5 opacity-50">
                     <i class="fa-solid fa-music fa-4x mb-3"></i>
@@ -1691,7 +1698,7 @@ function initializeMusicControlPage() {
                 return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
             };
 
-            els.queue.innerHTML = data.queue.map((song, i) => `
+            els.queue.innerHTML = queue.map((song, i) => `
                 <div class="queue-item">
                     <span class="me-3 text-secondary font-monospace" style="width:25px;">${i+1}.</span>
                     <div class="flex-grow-1 text-truncate">
