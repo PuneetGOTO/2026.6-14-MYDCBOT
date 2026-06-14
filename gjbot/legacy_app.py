@@ -5762,6 +5762,7 @@ if FLASK_AVAILABLE:
         if guild_id is None:
             return
         action = data.get('action')
+        sid = request.sid
         
         user_info = session.get('user', {})
         
@@ -5773,10 +5774,16 @@ if FLASK_AVAILABLE:
         async def execute_music_logic():
             try:
                 music_cog = bot.get_cog("音乐播放")
-                if not music_cog: return
+                if not music_cog:
+                    if socketio:
+                        socketio.emit('music_error', {'message': '音乐模块尚未加载，请检查 MusicCog/Lavalink 启动状态。'}, room=sid)
+                    return
 
                 guild = bot.get_guild(guild_id)
-                if not guild: return
+                if not guild:
+                    if socketio:
+                        socketio.emit('music_error', {'message': '服务器未找到。'}, room=sid)
+                    return
 
                 player = guild.voice_client 
 
@@ -5786,7 +5793,7 @@ if FLASK_AVAILABLE:
                     import database
                     playlists = database.db_get_user_playlists(db_user_id)
                     if socketio:
-                        socketio.emit('playlist_list_update', {'playlists': playlists}, room=request.sid)
+                        socketio.emit('playlist_list_update', {'playlists': playlists}, room=sid)
                     return
 
                 elif action == 'playlist_delete':
@@ -5794,16 +5801,16 @@ if FLASK_AVAILABLE:
                     import database
                     if database.db_delete_playlist(db_user_id, name):
                         if socketio:
-                            socketio.emit('music_error', {'message': f'歌单 "{name}" 已删除', 'type': 'success'}, room=request.sid)
+                            socketio.emit('music_error', {'message': f'歌单 "{name}" 已删除', 'type': 'success'}, room=sid)
                             # 刷新列表
                             playlists = database.db_get_user_playlists(db_user_id)
-                            socketio.emit('playlist_list_update', {'playlists': playlists}, room=request.sid)
+                            socketio.emit('playlist_list_update', {'playlists': playlists}, room=sid)
                     return
 
                 # --- 以下操作需要 Player 存在 ---
                 if action == 'playlist_save':
                     if not player or (player.queue.is_empty and not player.current):
-                        if socketio: socketio.emit('music_error', {'message': '队列为空，无法保存'}, room=request.sid)
+                        if socketio: socketio.emit('music_error', {'message': '队列为空，无法保存'}, room=sid)
                         return
                     
                     name = data.get('name')
@@ -5820,7 +5827,7 @@ if FLASK_AVAILABLE:
                     success, msg = database.db_save_queue_to_playlist(db_user_id, name, tracks_to_save)
                     
                     type_str = 'success' if success else 'error'
-                    if socketio: socketio.emit('music_error', {'message': msg, 'type': type_str}, room=request.sid)
+                    if socketio: socketio.emit('music_error', {'message': msg, 'type': type_str}, room=sid)
                     return
 
                 elif action == 'playlist_load':
@@ -5842,16 +5849,16 @@ if FLASK_AVAILABLE:
                                     break
                     
                     if not player:
-                        if socketio: socketio.emit('music_error', {'message': '请先让机器人加入语音频道'}, room=request.sid)
+                        if socketio: socketio.emit('music_error', {'message': '请先让机器人加入语音频道'}, room=sid)
                         return
 
                     import database
                     track_uris = database.db_load_playlist_tracks(db_user_id, name)
                     if not track_uris:
-                        if socketio: socketio.emit('music_error', {'message': '歌单为空或不存在'}, room=request.sid)
+                        if socketio: socketio.emit('music_error', {'message': '歌单为空或不存在'}, room=sid)
                         return
 
-                    if socketio: socketio.emit('music_error', {'message': f'正在加载歌单 "{name}" ({len(track_uris)} 首)...', 'type': 'success'}, room=request.sid)
+                    if socketio: socketio.emit('music_error', {'message': f'正在加载歌单 "{name}" ({len(track_uris)} 首)...', 'type': 'success'}, room=sid)
 
                     # 异步加载
                     count = 0
@@ -5875,17 +5882,48 @@ if FLASK_AVAILABLE:
                 
                 if action == 'join':
                     target_channel_id = data.get('target_channel_id')
-                    if not target_channel_id: return
+                    if not target_channel_id:
+                        if socketio:
+                            socketio.emit('music_error', {'message': '请选择一个语音频道。'}, room=sid)
+                        return
                     channel = guild.get_channel(int(target_channel_id))
-                    if channel:
-                        if player: await player.move_to(channel)
-                        else: await channel.connect(cls=wavelink.Player)
-                        await music_cog.broadcast_music_state(guild_id)
+                    if not channel or not isinstance(channel, discord.VoiceChannel):
+                        if socketio:
+                            socketio.emit('music_error', {'message': '找不到选中的语音频道。'}, room=sid)
+                        return
+
+                    bot_member = guild.me or guild.get_member(bot.user.id)
+                    if not bot_member:
+                        if socketio:
+                            socketio.emit('music_error', {'message': '无法获取机器人在服务器中的成员状态，请稍后重试。'}, room=sid)
+                        return
+                    permissions = channel.permissions_for(bot_member)
+                    missing_permissions = []
+                    if not permissions.connect:
+                        missing_permissions.append('连接')
+                    if not permissions.speak:
+                        missing_permissions.append('说话')
+                    if missing_permissions:
+                        if socketio:
+                            socketio.emit(
+                                'music_error',
+                                {'message': f'机器人在 #{channel.name} 缺少权限: {", ".join(missing_permissions)}。'},
+                                room=sid,
+                            )
+                        return
+
+                    if player:
+                        await player.move_to(channel)
+                    else:
+                        await channel.connect(cls=wavelink.Player)
+                    if socketio:
+                        socketio.emit('music_error', {'message': f'已加入 #{channel.name}', 'type': 'success', 'action': 'join'}, room=sid)
+                    await music_cog.broadcast_music_state(guild_id)
 
                 elif action == 'play':
                     query = data.get('query')
                     if not player:
-                        if socketio: socketio.emit('music_error', {'message': '请先在右上角选择频道并点击“加入”'}, room=request.sid)
+                        if socketio: socketio.emit('music_error', {'message': '请先在右上角选择频道并点击“加入”'}, room=sid)
                         return
 
                     if query.startswith("http"):
@@ -5894,7 +5932,7 @@ if FLASK_AVAILABLE:
                         tracks = await wavelink.Playable.search(f"scsearch:{query}")
 
                     if not tracks:
-                        if socketio: socketio.emit('music_error', {'message': '未找到歌曲'}, room=request.sid)
+                        if socketio: socketio.emit('music_error', {'message': '未找到歌曲'}, room=sid)
                         return
 
                     if isinstance(tracks, wavelink.Playlist):
@@ -5940,9 +5978,9 @@ if FLASK_AVAILABLE:
                     await music_cog.broadcast_music_state(guild_id)
 
             except Exception as e:
-                print(f"[DEBUG SOCKET] ❌ 异常: {e}")
-                import traceback
-                traceback.print_exc()
+                logging.exception(f"[Music Socket] Failed to handle action '{action}': {e}")
+                if socketio:
+                    socketio.emit('music_error', {'message': f'音乐操作失败: {e}'}, room=sid)
 
         asyncio.run_coroutine_threadsafe(execute_music_logic(), bot.loop)
 

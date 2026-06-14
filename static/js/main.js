@@ -25,7 +25,8 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM完全加载，开始执行JS。");
     const body = document.body;
-    const pageId = body.dataset.pageId;
+    const pageRoot = document.querySelector('[data-page-id]');
+    const pageId = body.dataset.pageId || (pageRoot ? pageRoot.dataset.pageId : undefined);
     const mainContent = document.getElementById('main-content-wrapper'); // 在顶层获取
 
     console.log(`检测到页面ID: ${pageId}`);
@@ -1548,7 +1549,8 @@ function initializeSuperuserBroadcastPage() {
 }
 
 function initializeMusicControlPage() {
-    const GUILD_ID = document.body.dataset.guildId;
+    const pageRoot = document.querySelector('[data-page-id="music_control"]') || document.body;
+    const GUILD_ID = document.body.dataset.guildId || pageRoot.dataset.guildId;
     if (!GUILD_ID) return;
 
     console.log("[Music] Initializing Music Control for Guild:", GUILD_ID);
@@ -1699,9 +1701,20 @@ function initializeMusicControlPage() {
         els.searchInput.placeholder = '粘贴链接 (YouTube/SoundCloud) 或输入歌名...';
         els.btnSearch.disabled = false;
         els.btnSearch.innerHTML = '<i class="fa-solid fa-plus me-1"></i> 点歌';
+        if (els.btnManualJoin) {
+            els.btnManualJoin.disabled = false;
+            els.btnManualJoin.innerHTML = '加入';
+        }
 
         if (data.type === 'success') {
             console.log("Success:", data.message);
+            if (data.action === 'join' && els.btnManualJoin) {
+                els.btnManualJoin.disabled = false;
+                els.btnManualJoin.innerHTML = '已加入';
+                setTimeout(() => {
+                    els.btnManualJoin.innerHTML = '加入';
+                }, 1500);
+            }
         } else {
             alert("❌ 错误: " + data.message);
         }
@@ -1753,7 +1766,10 @@ function initializeMusicControlPage() {
 
             setTimeout(() => {
                 els.btnManualJoin.disabled = false;
-                els.btnManualJoin.innerHTML = originalHtml;
+                els.btnManualJoin.innerHTML = '已发送';
+                setTimeout(() => {
+                    els.btnManualJoin.innerHTML = originalHtml;
+                }, 1200);
             }, 2000);
         });
     }

@@ -106,7 +106,7 @@
     data-page-id="music_control": 告诉 main.js 初始化音乐逻辑
     data-guild-id: 告诉 JS 当前操作哪个服务器
 -->
-<body data-page-id="music_control" data-guild-id="{{ guild.id }}">
+<div id="music-control-page" data-page-id="music_control" data-guild-id="{{ guild.id }}">
 
 <div class="container-fluid p-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -280,5 +280,5 @@
     }
 </script>
 
-</body>
+</div>
 {% endblock %}
