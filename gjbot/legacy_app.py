@@ -11,6 +11,7 @@ if not eventlet.patcher.is_monkey_patched("socket"):
 # ===================================================================
 
 import discord
+import discord.voice_client as discord_voice_client
 from discord import app_commands, ui, Interaction
 from discord.ext import commands
 from discord.utils import get
@@ -64,6 +65,29 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # 在尝试获取环境变量之前加载 .env 文件
 # load_dotenv() 会自动在当前运行目录下寻找一个叫做 .env 的文件
 load_dotenv()
+
+def ensure_discord_voice_runtime() -> tuple[bool, str]:
+    """Validate the native Discord voice dependency in the running process."""
+
+    try:
+        import nacl  # noqa: F401
+        import nacl.secret  # noqa: F401
+    except Exception as exc:
+        discord_voice_client.has_nacl = False
+        return False, f"PyNaCl import failed: {type(exc).__name__}: {exc}"
+
+    if not discord_voice_client.has_nacl:
+        discord_voice_client.has_nacl = True
+    return True, "PyNaCl is available"
+
+_voice_runtime_ok, _voice_runtime_message = ensure_discord_voice_runtime()
+logging.warning(
+    "[VOICE_RUNTIME] python=%s discord_voice_client=%s has_nacl=%s status=%s",
+    sys.executable,
+    getattr(discord_voice_client, "__file__", "unknown"),
+    discord_voice_client.has_nacl,
+    _voice_runtime_message,
+)
 
 # --- Configuration ---
 # --- 支付宝配置 (最终版) ---
@@ -6037,6 +6061,18 @@ if FLASK_AVAILABLE:
                             room=sid,
                         )
                     return
+
+                voice_ok, voice_message = ensure_discord_voice_runtime()
+                if not voice_ok:
+                    logging.error("[VOICE_RUNTIME] Native voice unavailable before join: %s", voice_message)
+                    if socketio:
+                        socketio.emit('voice_control_error', {'message': f'Discord 语音依赖不可用: {voice_message}'}, room=sid)
+                    return
+                logging.warning(
+                    "[VOICE_RUNTIME] before_join has_nacl=%s status=%s",
+                    discord_voice_client.has_nacl,
+                    voice_message,
+                )
 
                 if isinstance(guild.voice_client, wavelink.Player):
                     await guild.voice_client.disconnect()
