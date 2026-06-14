@@ -5692,7 +5692,12 @@ web_permissions = {}
 welcome_message_settings = {}
 
 if FLASK_AVAILABLE:
-    web_app = Flask(__name__)
+    _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    web_app = Flask(
+        __name__,
+        template_folder=os.path.join(_project_root, "templates"),
+        static_folder=os.path.join(_project_root, "static"),
+    )
 
     # 自定义Jinja2过滤器，用于在模板中格式化Unix时间戳
     def format_timestamp(timestamp, fmt='%Y-%m-%d %H:%M:%S'):
