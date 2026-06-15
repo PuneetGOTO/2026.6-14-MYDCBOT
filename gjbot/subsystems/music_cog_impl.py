@@ -434,7 +434,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
                 await self.broadcast_music_state(guild_id)
                 return
 
-            logging.info(
+            logging.warning(
                 "[Music Health] ok guild=%s reason=%s track=%s ping=%s position=%s",
                 guild_id,
                 reason,
