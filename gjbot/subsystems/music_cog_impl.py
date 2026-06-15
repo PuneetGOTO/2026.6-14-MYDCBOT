@@ -112,32 +112,43 @@ class MusicCog(commands.Cog, name="音乐播放"):
 
         query = query.strip()
         if query.startswith("http"):
-            search_queries = [query]
+            search_queries = [("direct", query, None)]
             if "?" in query:
                 parsed = urllib.parse.urlsplit(query)
                 cleaned = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
                 if cleaned != query:
-                    search_queries.append(cleaned)
+                    search_queries.append(("direct-clean", cleaned, None))
         else:
             search_queries = [
-                f"scsearch:{query}",
-                f"ytsearch:{query}",
-                f"ytmsearch:{query}",
+                ("scsearch", query, wavelink.TrackSource.SoundCloud),
+                ("ytsearch", query, wavelink.TrackSource.YouTube),
+                ("ytmsearch", query, wavelink.TrackSource.YouTubeMusic),
             ]
 
         last_error = None
         tried_queries = []
-        for search_query in search_queries:
-            tried_queries.append(search_query.split(":", 1)[0] if ":" in search_query else "direct")
+        for source_name, search_query, source in search_queries:
+            tried_queries.append(source_name)
             try:
-                tracks = await wavelink.Playable.search(search_query)
+                tracks = await wavelink.Playable.search(search_query, source=source)
             except wavelink.LavalinkLoadException as exc:
                 last_error = exc
-                logging.warning("[Music] Lavalink failed query=%r: %s", search_query, exc)
+                logging.warning(
+                    "[Music] Lavalink failed source=%s query=%r: %s",
+                    source_name,
+                    search_query,
+                    exc,
+                )
                 continue
             except Exception as exc:
                 last_error = exc
-                logging.warning("[Music] Search failed query=%r: %s", search_query, exc, exc_info=True)
+                logging.warning(
+                    "[Music] Search failed source=%s query=%r: %s",
+                    source_name,
+                    search_query,
+                    exc,
+                    exc_info=True,
+                )
                 continue
 
             if tracks:
@@ -145,10 +156,15 @@ class MusicCog(commands.Cog, name="音乐播放"):
                     count = len(tracks.tracks) if isinstance(tracks, wavelink.Playlist) else len(tracks)
                 except Exception:
                     count = "unknown"
-                logging.warning("[Music] Search matched query=%r count=%s", search_query, count)
+                logging.warning(
+                    "[Music] Search matched source=%s query=%r count=%s",
+                    source_name,
+                    search_query,
+                    count,
+                )
                 return tracks
 
-            logging.warning("[Music] Search empty query=%r", search_query)
+            logging.warning("[Music] Search empty source=%s query=%r", source_name, search_query)
 
         if last_error:
             raise RuntimeError(
