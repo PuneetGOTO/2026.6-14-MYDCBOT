@@ -5908,7 +5908,7 @@ if FLASK_AVAILABLE:
                     count = 0
                     for uri in track_uris:
                         try:
-                            tracks = await wavelink.Playable.search(uri)
+                            tracks = await music_cog.search_tracks(uri)
                             if tracks:
                                 t = tracks[0] if isinstance(tracks, list) else tracks.tracks[0]
                                 await player.queue.put_wait(t)
@@ -5973,10 +5973,7 @@ if FLASK_AVAILABLE:
                         if socketio: socketio.emit('music_error', {'message': '请先在右上角选择频道并点击“加入”'}, room=sid)
                         return
 
-                    if query.startswith("http"):
-                        tracks = await wavelink.Playable.search(query)
-                    else:
-                        tracks = await wavelink.Playable.search(f"scsearch:{query}")
+                    tracks = await music_cog.search_tracks(query)
 
                     if not tracks:
                         if socketio: socketio.emit('music_error', {'message': '未找到歌曲'}, room=sid)
@@ -6028,6 +6025,10 @@ if FLASK_AVAILABLE:
                 elif action == 'get_state':
                     await music_cog.broadcast_music_state(guild_id)
 
+            except RuntimeError as e:
+                logging.warning("[Music Socket] Action '%s' failed: %s", action, e)
+                if socketio:
+                    socketio.emit('music_error', {'message': str(e)}, room=sid)
             except Exception as e:
                 logging.exception(f"[Music Socket] Failed to handle action '{action}': {e}")
                 if socketio:

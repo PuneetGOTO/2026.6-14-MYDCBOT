@@ -4,6 +4,8 @@ from discord import app_commands
 import wavelink
 import asyncio
 import logging
+import os
+import urllib.parse
 from typing import cast, Dict, Any, Optional
 
 # 注意：database 模块将在具体指令中导入，以避免循环导入问题
@@ -58,8 +60,84 @@ class MusicCog(commands.Cog, name="音乐播放"):
             self._playback_health_check(guild_id, reason)
         )
 
+    async def ensure_lavalink_connected(self) -> tuple[bool, str]:
+        """Ensure Wavelink has a connected node, reconnecting if Lavalink came up late."""
+        try:
+            node = wavelink.Pool.get_node()
+            if node.status == wavelink.NodeStatus.CONNECTED:
+                return True, "Lavalink 节点已连接"
+        except Exception:
+            node = None
+
+        try:
+            await wavelink.Pool.reconnect()
+            node = wavelink.Pool.get_node()
+            if node.status == wavelink.NodeStatus.CONNECTED:
+                logging.info("[Music] Reconnected existing Lavalink node.")
+                return True, "Lavalink 节点已重新连接"
+        except Exception:
+            logging.warning("[Music] Existing Lavalink node reconnect failed.", exc_info=True)
+
+        if wavelink.Pool.nodes:
+            return False, "Lavalink 节点存在但未连接，请重启 lavalink.service 或 gjteam-bot。"
+
+        password = os.environ.get("LAVALINK_PASSWORD")
+        if not password:
+            return False, "未配置 LAVALINK_PASSWORD，音乐功能无法连接 Lavalink。"
+
+        host = os.environ.get("LAVALINK_HOST", "127.0.0.1")
+        try:
+            port = int(os.environ.get("LAVALINK_PORT", 2333))
+        except (TypeError, ValueError):
+            return False, "LAVALINK_PORT 配置无效。"
+
+        try:
+            node = wavelink.Node(uri=f"http://{host}:{port}", password=password)
+            await wavelink.Pool.connect(client=self.bot, nodes=[node])
+            connected = wavelink.Pool.get_node()
+            if connected.status == wavelink.NodeStatus.CONNECTED:
+                logging.info("[Music] Connected new Lavalink node %s:%s.", host, port)
+                return True, "Lavalink 节点已连接"
+        except Exception as exc:
+            logging.warning("[Music] Creating Lavalink node failed: %s", exc, exc_info=True)
+
+        return False, f"Lavalink 节点未连接，请确认 lavalink.service 正在运行且端口为 {host}:{port}。"
+
+    async def search_tracks(self, query: str):
+        ok, message = await self.ensure_lavalink_connected()
+        if not ok:
+            raise RuntimeError(message)
+
+        query = query.strip()
+        if query.startswith("http"):
+            search_query = query
+        else:
+            search_query = f"scsearch:{query}"
+
+        try:
+            return await wavelink.Playable.search(search_query)
+        except wavelink.LavalinkLoadException as exc:
+            if query.startswith("http") and "?" in query:
+                parsed = urllib.parse.urlsplit(query)
+                cleaned = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+                if cleaned != query:
+                    try:
+                        return await wavelink.Playable.search(cleaned)
+                    except Exception:
+                        pass
+
+            logging.warning("[Music] Lavalink failed to load query=%r: %s", query, exc)
+            raise RuntimeError("Lavalink 无法加载这首歌，请换一个链接或改用关键词搜索。") from exc
+        except Exception as exc:
+            logging.warning("[Music] Search failed query=%r: %s", query, exc, exc_info=True)
+            raise RuntimeError(f"搜索失败: {exc}") from exc
+
     async def connect_player(self, channel) -> wavelink.Player:
         """Connect a Wavelink player, replacing native Discord voice clients when needed."""
+        ok, message = await self.ensure_lavalink_connected()
+        if not ok:
+            raise RuntimeError(message)
+
         guild = channel.guild
         existing_voice = guild.voice_client
 
@@ -456,12 +534,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         # --- 核心修改：使用字符串前缀而非 Enum，强制 SC 搜索 ---
         try:
             query = query.strip()
-            # 如果是链接，直接搜 (支持 SC/Spotify 链接)
-            if query.startswith("http"):
-                tracks: wavelink.Search = await wavelink.Playable.search(query)
-            else:
-                # 如果是关键词，手动添加 scsearch: 前缀
-                tracks: wavelink.Search = await wavelink.Playable.search(f"scsearch:{query}")
+            tracks: wavelink.Search = await self.search_tracks(query)
         
         except Exception as e:
             await interaction.followup.send(f"❌ 搜索出错: {e}", ephemeral=True)
