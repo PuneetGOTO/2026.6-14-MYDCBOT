@@ -12,6 +12,7 @@ from typing import cast, Dict, Any, Optional
 
 class MusicCog(commands.Cog, name="音乐播放"):
     VOICE_LINK_WARNING = "Lavalink 已加载歌曲，但 Discord 语音链路没有建立，请让机器人重新加入频道或检查服务器语音区域/权限。"
+    POSITION_STALLED_WARNING = "Lavalink 已连接语音，但播放进度没有推进，请检查 Lavalink 音源/解码日志或换一首歌测试。"
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -401,6 +402,21 @@ class MusicCog(commands.Cog, name="音乐播放"):
             last_update = self._last_player_updates.get(guild_id)
             track_title = getattr(player.current, "title", "unknown")
             player_ping = getattr(player, "ping", -1)
+            lavalink_info = None
+            lavalink_position = None
+            lavalink_connected = None
+            lavalink_ping = None
+            lavalink_paused = None
+
+            try:
+                lavalink_info = await player.node.fetch_player_info(guild_id)
+                if lavalink_info:
+                    lavalink_position = getattr(lavalink_info.state, "position", None)
+                    lavalink_connected = getattr(lavalink_info.state, "connected", None)
+                    lavalink_ping = getattr(lavalink_info.state, "ping", None)
+                    lavalink_paused = getattr(lavalink_info, "paused", None)
+            except Exception:
+                logging.warning("[Music Health] failed to fetch Lavalink player info guild=%s", guild_id, exc_info=True)
 
             if status.get("voice_warning"):
                 logging.warning(
@@ -434,13 +450,65 @@ class MusicCog(commands.Cog, name="音乐播放"):
                 await self.broadcast_music_state(guild_id)
                 return
 
+            first_position = lavalink_position
+            if first_position is None:
+                first_position = last_update.get("position") if last_update else getattr(player, "position", 0)
+
             logging.warning(
-                "[Music Health] ok guild=%s reason=%s track=%s ping=%s position=%s",
+                "[Music Health] ok guild=%s reason=%s track=%s ping=%s position=%s lavalink_connected=%s lavalink_ping=%s lavalink_paused=%s",
                 guild_id,
                 reason,
                 track_title,
                 link_ping,
-                last_update.get("position") if last_update else getattr(player, "position", 0),
+                first_position,
+                lavalink_connected,
+                lavalink_ping,
+                lavalink_paused,
+            )
+
+            if first_position is None or first_position > 1000:
+                return
+
+            await asyncio.sleep(7)
+            guild = self.bot.get_guild(guild_id)
+            player = self.get_player(guild) if guild else None
+            if not player or not player.current or player.paused:
+                return
+
+            later_info = None
+            later_position = None
+            try:
+                later_info = await player.node.fetch_player_info(guild_id)
+                if later_info:
+                    later_position = getattr(later_info.state, "position", None)
+            except Exception:
+                logging.warning("[Music Health] failed to fetch later Lavalink player info guild=%s", guild_id, exc_info=True)
+
+            if later_position is None:
+                later_update = self._last_player_updates.get(guild_id)
+                later_position = later_update.get("position") if later_update else getattr(player, "position", 0)
+
+            if later_position is not None and later_position <= first_position + 1000:
+                self._playback_warnings[guild_id] = self.POSITION_STALLED_WARNING
+                logging.warning(
+                    "[Music Health] stalled position guild=%s reason=%s track=%s first_position=%s later_position=%s current=%s",
+                    guild_id,
+                    reason,
+                    track_title,
+                    first_position,
+                    later_position,
+                    getattr(player.current, "title", "unknown"),
+                )
+                await self.broadcast_music_state(guild_id)
+                return
+
+            logging.warning(
+                "[Music Health] progressing guild=%s reason=%s track=%s first_position=%s later_position=%s",
+                guild_id,
+                reason,
+                track_title,
+                first_position,
+                later_position,
             )
         except asyncio.CancelledError:
             raise
