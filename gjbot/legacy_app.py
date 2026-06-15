@@ -5919,7 +5919,8 @@ if FLASK_AVAILABLE:
                         await player.pause(False)
                     if not player.current and not player.queue.is_empty:
                         await player.play(player.queue.get())
-                    
+                        music_cog.schedule_playback_health_check(guild_id, "web_playlist_load")
+
                     await music_cog.broadcast_music_state(guild_id)
                     return
 
@@ -5991,7 +5992,8 @@ if FLASK_AVAILABLE:
                         await player.pause(False)
                     if not player.current and not player.queue.is_empty:
                         await player.play(player.queue.get())
-                    
+                        music_cog.schedule_playback_health_check(guild_id, "web_play")
+
                     await music_cog.broadcast_music_state(guild_id)
 
                 elif action == 'skip':
@@ -6000,6 +6002,7 @@ if FLASK_AVAILABLE:
                 elif action == 'stop':
                     if player:
                         music_cog.clear_playback_warning(guild_id)
+                        music_cog.cancel_playback_health_check(guild_id)
                         player.queue.clear()
                         await player.skip(force=True)
                         await player.disconnect()

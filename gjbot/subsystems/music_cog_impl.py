@@ -9,9 +9,13 @@ from typing import cast, Dict, Any, Optional
 # 注意：database 模块将在具体指令中导入，以避免循环导入问题
 
 class MusicCog(commands.Cog, name="音乐播放"):
+    VOICE_LINK_WARNING = "Lavalink 已加载歌曲，但 Discord 语音链路没有建立，请让机器人重新加入频道或检查服务器语音区域/权限。"
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._playback_warnings: Dict[int, str] = {}
+        self._last_player_updates: Dict[int, Dict[str, Any]] = {}
+        self._health_tasks: Dict[int, asyncio.Task] = {}
 
     async def cog_load(self):
         print("MusicCog (Lavalink/SoundCloud/歌单系统) 已挂载。")
@@ -33,6 +37,27 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if guild_id is not None:
             self._playback_warnings.pop(int(guild_id), None)
 
+    def cancel_playback_health_check(self, guild_id: Optional[int]) -> None:
+        if guild_id is None:
+            return
+
+        task = self._health_tasks.pop(int(guild_id), None)
+        if task and not task.done():
+            task.cancel()
+
+    def schedule_playback_health_check(self, guild_id: Optional[int], reason: str) -> None:
+        if guild_id is None:
+            return
+
+        guild_id = int(guild_id)
+        task = self._health_tasks.get(guild_id)
+        if task and not task.done():
+            task.cancel()
+
+        self._health_tasks[guild_id] = self.bot.loop.create_task(
+            self._playback_health_check(guild_id, reason)
+        )
+
     async def connect_player(self, channel) -> wavelink.Player:
         """Connect a Wavelink player, replacing native Discord voice clients when needed."""
         guild = channel.guild
@@ -51,6 +76,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
                     "[Music] Recreating stale Wavelink player in guild %s.",
                     guild.id,
                 )
+                self.cancel_playback_health_check(guild.id)
                 await player.disconnect()
                 await asyncio.sleep(0.5)
                 existing_voice = None
@@ -65,6 +91,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
                 "[Music] Replacing native voice client with Wavelink player in guild %s.",
                 guild.id,
             )
+            self.cancel_playback_health_check(guild.id)
             await existing_voice.disconnect(force=True)
             await asyncio.sleep(0.5)
 
@@ -89,6 +116,8 @@ class MusicCog(commands.Cog, name="音乐播放"):
             'node_connected': False,
             'voice_channel': voice_channel,
             'voice_warning': voice_warning,
+            'voice_ping': -1,
+            'position': 0,
             'volume': 100,
             'loop_mode': 'none',
             'current_song': None,
@@ -115,6 +144,13 @@ class MusicCog(commands.Cog, name="音乐播放"):
             bot_user = self.bot.user
             bot_member = guild.me or (guild.get_member(bot_user.id) if bot_user else None)
             voice_state = getattr(bot_member, "voice", None) if bot_member else None
+
+        last_update = self._last_player_updates.get(guild.id) if guild else None
+        voice_ping = getattr(player, "ping", -1)
+        position = getattr(player, "position", 0)
+        if last_update:
+            voice_ping = last_update.get("ping", voice_ping)
+            position = last_update.get("position", position)
 
         if voice_state and voice_state.channel:
             voice_channel = {"id": str(voice_state.channel.id), "name": voice_state.channel.name}
@@ -147,6 +183,8 @@ class MusicCog(commands.Cog, name="音乐播放"):
             'node_connected': node_connected,
             'voice_channel': voice_channel,
             'voice_warning': voice_warning,
+            'voice_ping': voice_ping,
+            'position': position,
         }
 
     def to_dict(self, player: wavelink.Player) -> Dict[str, Any]:
@@ -193,6 +231,8 @@ class MusicCog(commands.Cog, name="音乐播放"):
             'node_connected': voice_status['node_connected'],
             'voice_channel': voice_status['voice_channel'],
             'voice_warning': voice_status['voice_warning'],
+            'voice_ping': voice_status['voice_ping'],
+            'position': voice_status['position'],
             'volume': player.volume,
             'loop_mode': loop_mode_str,
             'current_song': current_data,
@@ -226,6 +266,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if not player.queue.is_empty:
             next_track = player.queue.get()
             await player.play(next_track)
+            self.schedule_playback_health_check(player.guild.id, "track_end_next")
         
         # 无论是否播放下一首，都更新 Web 状态
         await self.broadcast_music_state(player.guild.id)
@@ -236,8 +277,93 @@ class MusicCog(commands.Cog, name="音乐播放"):
         player = payload.player
         if not player or not player.guild: return
         self.clear_playback_warning(player.guild.id)
+        self.schedule_playback_health_check(player.guild.id, "track_start")
         # 立即更新 Web 面板，显示当前歌曲信息
         await self.broadcast_music_state(player.guild.id)
+
+    @commands.Cog.listener()
+    async def on_wavelink_player_update(self, payload: wavelink.PlayerUpdateEventPayload):
+        """Keep the latest Lavalink voice-link telemetry for diagnostics."""
+        player = getattr(payload, "player", None)
+        if not player or not player.guild:
+            return
+
+        guild_id = player.guild.id
+        self._last_player_updates[guild_id] = {
+            "connected": getattr(payload, "connected", None),
+            "ping": getattr(payload, "ping", None),
+            "position": getattr(payload, "position", None),
+            "time": getattr(payload, "time", None),
+        }
+
+        if (
+            getattr(payload, "connected", False)
+            and getattr(payload, "ping", -1) >= 0
+            and self._playback_warnings.get(guild_id) == self.VOICE_LINK_WARNING
+        ):
+            self.clear_playback_warning(guild_id)
+            await self.broadcast_music_state(guild_id)
+
+    async def _playback_health_check(self, guild_id: int, reason: str) -> None:
+        try:
+            await asyncio.sleep(5)
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return
+
+            player = self.get_player(guild)
+            if not player or not player.current or player.paused:
+                return
+
+            status = self._voice_status(player)
+            last_update = self._last_player_updates.get(guild_id)
+            track_title = getattr(player.current, "title", "unknown")
+            player_ping = getattr(player, "ping", -1)
+
+            if status.get("voice_warning"):
+                logging.warning(
+                    "[Music Health] warning guild=%s reason=%s track=%s warning=%s player_connected=%s node_connected=%s ping=%s last_update=%s",
+                    guild_id,
+                    reason,
+                    track_title,
+                    status.get("voice_warning"),
+                    status.get("connected"),
+                    status.get("node_connected"),
+                    player_ping,
+                    last_update,
+                )
+                await self.broadcast_music_state(guild_id)
+                return
+
+            link_connected = bool(last_update and last_update.get("connected"))
+            link_ping = last_update.get("ping") if last_update else player_ping
+            if not link_connected or link_ping is None or link_ping < 0:
+                self._playback_warnings[guild_id] = self.VOICE_LINK_WARNING
+                logging.warning(
+                    "[Music Health] voice link not ready guild=%s reason=%s track=%s player_connected=%s node_connected=%s player_ping=%s last_update=%s",
+                    guild_id,
+                    reason,
+                    track_title,
+                    status.get("connected"),
+                    status.get("node_connected"),
+                    player_ping,
+                    last_update,
+                )
+                await self.broadcast_music_state(guild_id)
+                return
+
+            logging.info(
+                "[Music Health] ok guild=%s reason=%s track=%s ping=%s position=%s",
+                guild_id,
+                reason,
+                track_title,
+                link_ping,
+                last_update.get("position") if last_update else getattr(player, "position", 0),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("[Music Health] failed guild=%s reason=%s", guild_id, reason)
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
@@ -361,6 +487,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if not player.current and not player.queue.is_empty:
             next_track = player.queue.get()
             await player.play(next_track)
+            self.schedule_playback_health_check(interaction.guild_id, "slash_play")
         
         await self.broadcast_music_state(interaction.guild_id)
 
@@ -379,6 +506,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         player = self.get_player(interaction.guild)
         if player:
             self.clear_playback_warning(interaction.guild_id)
+            self.cancel_playback_health_check(interaction.guild_id)
             player.queue.clear()
             await player.skip(force=True)
             await player.disconnect()
