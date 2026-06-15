@@ -265,6 +265,17 @@ class MusicCog(commands.Cog, name="音乐播放"):
             'position': position,
         }
 
+    def is_effectively_playing(self, player: wavelink.Player) -> bool:
+        status = self._voice_status(player)
+        return bool(
+            player.current
+            and player.playing
+            and not player.paused
+            and status['connected']
+            and status['node_connected']
+            and not status['voice_warning']
+        )
+
     def to_dict(self, player: wavelink.Player) -> Dict[str, Any]:
         """
         将播放器状态序列化为字典，供 Web 前端使用。
@@ -293,14 +304,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
 
         voice_status = self._voice_status(player)
         is_paused = bool(player.paused)
-        is_playing = bool(
-            current_track
-            and player.playing
-            and not is_paused
-            and voice_status['connected']
-            and voice_status['node_connected']
-            and not voice_status['voice_warning']
-        )
+        is_playing = self.is_effectively_playing(player)
 
         return {
             'is_playing': is_playing,
@@ -557,10 +561,17 @@ class MusicCog(commands.Cog, name="音乐播放"):
 
         if player.paused:
             await player.pause(False)
-        if not player.current and not player.queue.is_empty:
+        if (not player.current or not self.is_effectively_playing(player)) and not player.queue.is_empty:
             next_track = player.queue.get()
+            logging.warning(
+                "[Music] slash_play starting track guild=%s title=%s",
+                interaction.guild_id,
+                getattr(next_track, "title", "unknown"),
+            )
             await player.play(next_track)
             self.schedule_playback_health_check(interaction.guild_id, "slash_play")
+        elif player.current:
+            self.schedule_playback_health_check(interaction.guild_id, "slash_play_existing")
         
         await self.broadcast_music_state(interaction.guild_id)
 

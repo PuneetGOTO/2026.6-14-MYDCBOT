@@ -482,7 +482,7 @@ async def process_successful_payment(params: Dict[str, Any]):
         default_balance=ECONOMY_DEFAULT_BALANCE,
     ):
         logging.info(f"Successfully credited {amount_to_credit} units to user {user_id} for order {out_trade_no}")
-        
+
         # 6. (可选) 私信通知用户
         try:
             user = await bot.fetch_user(user_id)
@@ -5779,13 +5779,25 @@ if FLASK_AVAILABLE:
     @socketio.on('music_command')
     def handle_music_command_socket(data):
         """处理来自网页的音乐控制指令"""
-        # print(f"\n[DEBUG SOCKET] 收到音乐指令: {data}") # 调试用，稳定后可注释
-        
+        action = data.get('action') if isinstance(data, dict) else None
+        requested_guild_id = data.get('guild_id') if isinstance(data, dict) else None
+        sid = request.sid
+        logging.warning(
+            "[Music Socket] received action=%s guild_id=%s sid=%s",
+            action,
+            requested_guild_id,
+            sid,
+        )
+
         guild_id = _socket_check_auth(data, required_permission="tab_music")
         if guild_id is None:
+            logging.warning(
+                "[Music Socket] auth failed action=%s guild_id=%s sid=%s",
+                action,
+                requested_guild_id,
+                sid,
+            )
             return
-        action = data.get('action')
-        sid = request.sid
         
         user_info = session.get('user', {})
         
@@ -5812,6 +5824,12 @@ if FLASK_AVAILABLE:
 
                 async def connect_music_player(channel):
                     nonlocal player
+                    logging.warning(
+                        "[Music Socket] connecting player guild=%s channel=%s action=%s",
+                        guild_id,
+                        getattr(channel, "id", None),
+                        action,
+                    )
                     player = await music_cog.connect_player(channel)
                     return player
 
@@ -5917,9 +5935,23 @@ if FLASK_AVAILABLE:
                     
                     if player.paused:
                         await player.pause(False)
-                    if not player.current and not player.queue.is_empty:
-                        await player.play(player.queue.get())
+                    if (not player.current or not music_cog.is_effectively_playing(player)) and not player.queue.is_empty:
+                        next_track = player.queue.get()
+                        logging.warning(
+                            "[Music Socket] starting playlist track guild=%s title=%s",
+                            guild_id,
+                            getattr(next_track, "title", "unknown"),
+                        )
+                        await player.play(next_track)
                         music_cog.schedule_playback_health_check(guild_id, "web_playlist_load")
+                    elif player.current:
+                        logging.warning(
+                            "[Music Socket] playlist loaded while current active guild=%s current=%s queue_size=%s",
+                            guild_id,
+                            getattr(player.current, "title", "unknown"),
+                            len(player.queue),
+                        )
+                        music_cog.schedule_playback_health_check(guild_id, "web_playlist_existing")
 
                     await music_cog.broadcast_music_state(guild_id)
                     return
@@ -5987,9 +6019,23 @@ if FLASK_AVAILABLE:
 
                     if player.paused:
                         await player.pause(False)
-                    if not player.current and not player.queue.is_empty:
-                        await player.play(player.queue.get())
+                    if (not player.current or not music_cog.is_effectively_playing(player)) and not player.queue.is_empty:
+                        next_track = player.queue.get()
+                        logging.warning(
+                            "[Music Socket] starting track guild=%s title=%s",
+                            guild_id,
+                            getattr(next_track, "title", "unknown"),
+                        )
+                        await player.play(next_track)
                         music_cog.schedule_playback_health_check(guild_id, "web_play")
+                    elif player.current:
+                        logging.warning(
+                            "[Music Socket] queued track while current active guild=%s current=%s queue_size=%s",
+                            guild_id,
+                            getattr(player.current, "title", "unknown"),
+                            len(player.queue),
+                        )
+                        music_cog.schedule_playback_health_check(guild_id, "web_play_existing")
 
                     await music_cog.broadcast_music_state(guild_id)
 
