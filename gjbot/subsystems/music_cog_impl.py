@@ -111,27 +111,50 @@ class MusicCog(commands.Cog, name="音乐播放"):
 
         query = query.strip()
         if query.startswith("http"):
-            search_query = query
-        else:
-            search_query = f"scsearch:{query}"
-
-        try:
-            return await wavelink.Playable.search(search_query)
-        except wavelink.LavalinkLoadException as exc:
-            if query.startswith("http") and "?" in query:
+            search_queries = [query]
+            if "?" in query:
                 parsed = urllib.parse.urlsplit(query)
                 cleaned = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
                 if cleaned != query:
-                    try:
-                        return await wavelink.Playable.search(cleaned)
-                    except Exception:
-                        pass
+                    search_queries.append(cleaned)
+        else:
+            search_queries = [
+                f"scsearch:{query}",
+                f"ytsearch:{query}",
+                f"ytmsearch:{query}",
+            ]
 
-            logging.warning("[Music] Lavalink failed to load query=%r: %s", query, exc)
-            raise RuntimeError("Lavalink 无法加载这首歌，请换一个链接或改用关键词搜索。") from exc
-        except Exception as exc:
-            logging.warning("[Music] Search failed query=%r: %s", query, exc, exc_info=True)
-            raise RuntimeError(f"搜索失败: {exc}") from exc
+        last_error = None
+        tried_queries = []
+        for search_query in search_queries:
+            tried_queries.append(search_query.split(":", 1)[0] if ":" in search_query else "direct")
+            try:
+                tracks = await wavelink.Playable.search(search_query)
+            except wavelink.LavalinkLoadException as exc:
+                last_error = exc
+                logging.warning("[Music] Lavalink failed query=%r: %s", search_query, exc)
+                continue
+            except Exception as exc:
+                last_error = exc
+                logging.warning("[Music] Search failed query=%r: %s", search_query, exc, exc_info=True)
+                continue
+
+            if tracks:
+                try:
+                    count = len(tracks.tracks) if isinstance(tracks, wavelink.Playlist) else len(tracks)
+                except Exception:
+                    count = "unknown"
+                logging.warning("[Music] Search matched query=%r count=%s", search_query, count)
+                return tracks
+
+            logging.warning("[Music] Search empty query=%r", search_query)
+
+        if last_error:
+            raise RuntimeError(
+                f"Lavalink 无法加载或搜索这首歌，已尝试 {', '.join(tried_queries)}；请换一个链接或关键词。"
+            ) from last_error
+
+        raise RuntimeError(f"未找到歌曲，已尝试 {', '.join(tried_queries)}。")
 
     async def connect_player(self, channel) -> wavelink.Player:
         """Connect a Wavelink player, replacing native Discord voice clients when needed."""
