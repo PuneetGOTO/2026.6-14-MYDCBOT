@@ -20,6 +20,7 @@
         <div class="card-header">编辑活动状态</div>
         <div class="card-body">
             <form method="POST" action="{{ url_for('bot_profile_page') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
                     <label for="description-textarea" class="form-label">活动状态内容</label>
                     
