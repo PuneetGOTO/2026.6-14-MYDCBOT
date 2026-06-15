@@ -19,6 +19,7 @@ class MusicCog(commands.Cog, name="音乐播放"):
         self._playback_warnings: Dict[int, str] = {}
         self._last_player_updates: Dict[int, Dict[str, Any]] = {}
         self._health_tasks: Dict[int, asyncio.Task] = {}
+        self._stalled_recovery_attempts: Dict[int, Dict[str, Any]] = {}
 
     async def cog_load(self):
         print("MusicCog (Lavalink/SoundCloud/歌单系统) 已挂载。")
@@ -152,9 +153,13 @@ class MusicCog(commands.Cog, name="音乐播放"):
         if last_error:
             raise RuntimeError(
                 f"Lavalink 无法加载或搜索这首歌，已尝试 {', '.join(tried_queries)}；请换一个链接或关键词。"
+                "如果所有关键词搜索都失败，请检查 Lavalink 是否启用 SoundCloud/YouTube 搜索源或 youtube-source 插件。"
             ) from last_error
 
-        raise RuntimeError(f"未找到歌曲，已尝试 {', '.join(tried_queries)}。")
+        raise RuntimeError(
+            f"未找到歌曲，已尝试 {', '.join(tried_queries)}。"
+            "如果关键词搜索一直为空，请检查 Lavalink 是否启用 SoundCloud/YouTube 搜索源或 youtube-source 插件。"
+        )
 
     async def connect_player(self, channel) -> wavelink.Player:
         """Connect a Wavelink player, replacing native Discord voice clients when needed."""
@@ -299,6 +304,72 @@ class MusicCog(commands.Cog, name="音乐播放"):
             and status['node_connected']
             and not status['voice_warning']
         )
+
+    async def _retry_stalled_playback(
+        self,
+        guild_id: int,
+        player: wavelink.Player,
+        reason: str,
+        first_position: Any,
+        later_position: Any,
+    ) -> bool:
+        track = player.current
+        if not track:
+            return False
+
+        track_key = str(
+            getattr(track, "uri", None)
+            or getattr(track, "identifier", None)
+            or getattr(track, "title", "unknown")
+        )
+        now = self.bot.loop.time()
+        previous_attempt = self._stalled_recovery_attempts.get(guild_id)
+        if (
+            previous_attempt
+            and previous_attempt.get("track_key") == track_key
+            and now - float(previous_attempt.get("time", 0)) < 300
+        ):
+            logging.warning(
+                "[Music Health] stalled recovery already attempted guild=%s reason=%s track=%s first_position=%s later_position=%s",
+                guild_id,
+                reason,
+                getattr(track, "title", "unknown"),
+                first_position,
+                later_position,
+            )
+            return False
+
+        self._stalled_recovery_attempts[guild_id] = {"track_key": track_key, "time": now}
+        current_task = asyncio.current_task()
+        if self._health_tasks.get(guild_id) is current_task:
+            self._health_tasks.pop(guild_id, None)
+
+        try:
+            if player.paused:
+                await player.pause(False)
+            await player.play(track)
+        except Exception:
+            logging.warning(
+                "[Music Health] stalled recovery failed guild=%s reason=%s track=%s",
+                guild_id,
+                reason,
+                getattr(track, "title", "unknown"),
+                exc_info=True,
+            )
+            return False
+
+        self.clear_playback_warning(guild_id)
+        logging.warning(
+            "[Music Health] restarted stalled track guild=%s reason=%s track=%s first_position=%s later_position=%s",
+            guild_id,
+            reason,
+            getattr(track, "title", "unknown"),
+            first_position,
+            later_position,
+        )
+        await self.broadcast_music_state(guild_id)
+        self.schedule_playback_health_check(guild_id, f"{reason}_stalled_retry")
+        return True
 
     def to_dict(self, player: wavelink.Player) -> Dict[str, Any]:
         """
@@ -512,6 +583,15 @@ class MusicCog(commands.Cog, name="音乐播放"):
                 later_position = later_update.get("position") if later_update else getattr(player, "position", 0)
 
             if later_position is not None and later_position <= first_position + 1000:
+                if await self._retry_stalled_playback(
+                    guild_id,
+                    player,
+                    reason,
+                    first_position,
+                    later_position,
+                ):
+                    return
+
                 self._playback_warnings[guild_id] = self.POSITION_STALLED_WARNING
                 logging.warning(
                     "[Music Health] stalled position guild=%s reason=%s track=%s first_position=%s later_position=%s current=%s",
