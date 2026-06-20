@@ -26,3 +26,8 @@ logs/
 node_modules/
 dist/
 build/
+bin/
+obj/
+.vs/
+*.user
+.dotnet/
