@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using GJBot.Shared;
 
@@ -6,6 +7,7 @@ namespace GJBot.ControlClient;
 public sealed class MainForm : Form
 {
     private readonly TextBox _backendUrlTextBox = new();
+    private readonly TextBox _webPanelUrlTextBox = new();
     private readonly TextBox _apiKeyTextBox = new();
     private readonly TextBox _guildIdTextBox = new();
     private readonly TextBox _channelIdTextBox = new();
@@ -59,7 +61,7 @@ public sealed class MainForm : Form
             RowCount = 4,
             Padding = new Padding(12)
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 174));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 206));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
@@ -91,7 +93,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 4,
-            RowCount = 4,
+            RowCount = 5,
             Padding = new Padding(10)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
@@ -101,9 +103,11 @@ public sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
         _backendUrlTextBox.Dock = DockStyle.Fill;
+        _webPanelUrlTextBox.Dock = DockStyle.Fill;
         _apiKeyTextBox.Dock = DockStyle.Fill;
         _apiKeyTextBox.UseSystemPasswordChar = true;
         _guildIdTextBox.Dock = DockStyle.Fill;
@@ -120,6 +124,8 @@ public sealed class MainForm : Form
 
         var overviewButton = new Button { Text = "載入總覽", Width = 120, Height = 32 };
         overviewButton.Click += async (_, _) => await LoadGuildOverviewAsync();
+        var webButton = new Button { Text = "開啟網站面板", Width = 140, Height = 32 };
+        webButton.Click += (_, _) => OpenWebPath("/");
 
         var buttonPanel = new FlowLayoutPanel
         {
@@ -130,18 +136,22 @@ public sealed class MainForm : Form
         buttonPanel.Controls.Add(testButton);
         buttonPanel.Controls.Add(guildsButton);
         buttonPanel.Controls.Add(overviewButton);
+        buttonPanel.Controls.Add(webButton);
 
         layout.Controls.Add(CreateLabel("後端地址"), 0, 0);
         layout.Controls.Add(_backendUrlTextBox, 1, 0);
         layout.SetColumnSpan(_backendUrlTextBox, 3);
-        layout.Controls.Add(CreateLabel("API Key"), 0, 1);
-        layout.Controls.Add(_apiKeyTextBox, 1, 1);
+        layout.Controls.Add(CreateLabel("網站地址"), 0, 1);
+        layout.Controls.Add(_webPanelUrlTextBox, 1, 1);
+        layout.SetColumnSpan(_webPanelUrlTextBox, 3);
+        layout.Controls.Add(CreateLabel("API Key"), 0, 2);
+        layout.Controls.Add(_apiKeyTextBox, 1, 2);
         layout.SetColumnSpan(_apiKeyTextBox, 3);
-        layout.Controls.Add(CreateLabel("伺服器 ID"), 0, 2);
-        layout.Controls.Add(_guildIdTextBox, 1, 2);
-        layout.Controls.Add(CreateLabel("頻道 ID"), 2, 2);
-        layout.Controls.Add(_channelIdTextBox, 3, 2);
-        layout.Controls.Add(buttonPanel, 1, 3);
+        layout.Controls.Add(CreateLabel("伺服器 ID"), 0, 3);
+        layout.Controls.Add(_guildIdTextBox, 1, 3);
+        layout.Controls.Add(CreateLabel("頻道 ID"), 2, 3);
+        layout.Controls.Add(_channelIdTextBox, 3, 3);
+        layout.Controls.Add(buttonPanel, 1, 4);
         layout.SetColumnSpan(buttonPanel, 3);
 
         group.Controls.Add(layout);
@@ -151,6 +161,7 @@ public sealed class MainForm : Form
     private TabControl CreateCommandTabs()
     {
         var tabs = new TabControl { Dock = DockStyle.Fill };
+        tabs.TabPages.Add(CreateWebPanelTab());
         tabs.TabPages.Add(CreateOverviewTab());
         tabs.TabPages.Add(CreateSingleMessageTab());
         tabs.TabPages.Add(CreateBroadcastTab());
@@ -159,6 +170,98 @@ public sealed class MainForm : Form
         tabs.TabPages.Add(CreateChannelToolsTab());
         tabs.TabPages.Add(CreateDmTab());
         return tabs;
+    }
+
+    private TabPage CreateWebPanelTab()
+    {
+        var tab = new TabPage("網站功能中心");
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(12)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+
+        var hint = new Label
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "網站原有功能會在瀏覽器開啟，使用你的 Web 面板登入狀態。需要伺服器 ID 的頁面會使用上方「伺服器 ID」。"
+        };
+
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            AutoScroll = true
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
+
+        var links = new (string Text, string Path, bool NeedsGuild)[]
+        {
+            ("首頁/登入", "/", false),
+            ("控制台 Dashboard", "/dashboard", false),
+            ("伺服器總覽", "/guild/{guild}", true),
+            ("機器人設定", "/guild/{guild}/settings", true),
+            ("禁言/審核", "/guild/{guild}/moderation", true),
+            ("票據系統", "/guild/{guild}/tickets", true),
+            ("聊天記錄", "/guild/{guild}/transcripts", true),
+            ("音樂點歌台", "/guild/{guild}/music", true),
+            ("公告發布", "/guild/{guild}/announcements", true),
+            ("信道控制", "/channel_control/{guild}", true),
+            ("內容審查核心", "/audit_core/{guild}", true),
+            ("警告/紀律協議", "/warnings/{guild}", true),
+            ("權限管理", "/permissions/{guild}", true),
+            ("備份與恢復", "/guild/{guild}/backup", true),
+            ("副帳號管理", "/superuser/accounts", false),
+            ("機器人活動狀態", "/superuser/bot_profile", false),
+            ("全域廣播", "/superuser/broadcast", false)
+        };
+
+        grid.RowCount = (int)Math.Ceiling(links.Length / 3.0);
+        for (var row = 0; row < grid.RowCount; row++)
+        {
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        }
+
+        for (var i = 0; i < links.Length; i++)
+        {
+            var item = links[i];
+            var button = new Button
+            {
+                Text = item.Text,
+                Dock = DockStyle.Fill,
+                Height = 38,
+                Margin = new Padding(6)
+            };
+            button.Click += (_, _) => OpenWebPath(item.Path, item.NeedsGuild);
+            grid.Controls.Add(button, i % 3, i / 3);
+        }
+
+        var bottom = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight
+        };
+        var copyBackendButton = new Button { Text = "複製後端地址", Width = 130, Height = 32 };
+        copyBackendButton.Click += (_, _) => Clipboard.SetText(_backendUrlTextBox.Text.Trim());
+        var copyWebButton = new Button { Text = "複製網站地址", Width = 130, Height = 32 };
+        copyWebButton.Click += (_, _) => Clipboard.SetText(_webPanelUrlTextBox.Text.Trim());
+        bottom.Controls.Add(copyBackendButton);
+        bottom.Controls.Add(copyWebButton);
+
+        root.Controls.Add(hint, 0, 0);
+        root.Controls.Add(grid, 0, 1);
+        root.Controls.Add(bottom, 0, 2);
+        tab.Controls.Add(root);
+        return tab;
     }
 
     private TabPage CreateOverviewTab()
@@ -478,6 +581,7 @@ public sealed class MainForm : Form
     private void LoadSettingsIntoControls()
     {
         _backendUrlTextBox.Text = _settings.BackendUrl;
+        _webPanelUrlTextBox.Text = _settings.WebPanelUrl;
         _apiKeyTextBox.Text = _settings.ApiKey;
         _channelIdTextBox.Text = _settings.LastChannelId;
         _suppressMentionsCheckBox.Checked = _settings.SuppressMentions;
@@ -488,6 +592,7 @@ public sealed class MainForm : Form
         _settings = new ClientSettings
         {
             BackendUrl = _backendUrlTextBox.Text.Trim(),
+            WebPanelUrl = _webPanelUrlTextBox.Text.Trim(),
             ApiKey = _apiKeyTextBox.Text.Trim(),
             LastChannelId = _channelIdTextBox.Text.Trim(),
             SuppressMentions = _suppressMentionsCheckBox.Checked
@@ -495,6 +600,30 @@ public sealed class MainForm : Form
 
         SettingsStore.Save(_settings);
         Log($"設定已儲存到 {SettingsStore.SettingsPath}");
+    }
+
+    private void OpenWebPath(string path, bool needsGuild = false)
+    {
+        if (needsGuild && !EnsureGuildId())
+        {
+            return;
+        }
+
+        var baseUrl = NormalizeBaseUrl(_webPanelUrlTextBox.Text.Trim());
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            ShowWarning("請先填寫網站地址，例如 https://puneetblog.org");
+            return;
+        }
+
+        var resolvedPath = path.Replace("{guild}", _guildIdTextBox.Text.Trim(), StringComparison.Ordinal);
+        var url = new Uri(new Uri(baseUrl), resolvedPath.TrimStart('/')).ToString();
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = url,
+            UseShellExecute = true
+        });
+        Log("已開啟網站功能：" + url);
     }
 
     private async Task TestConnectionAsync()
@@ -931,6 +1060,17 @@ public sealed class MainForm : Form
     private ControlApiClient CreateClient()
     {
         return new ControlApiClient(_backendUrlTextBox.Text.Trim(), _apiKeyTextBox.Text.Trim());
+    }
+
+    private static string NormalizeBaseUrl(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        value = value.Trim();
+        return value.EndsWith("/", StringComparison.Ordinal) ? value : value + "/";
     }
 
     private bool EnsureGuildId()

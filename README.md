@@ -16,7 +16,7 @@ python -m gjbot
 - 經濟與商店系統：餘額管理、庫存安全扣減、充值記錄、排行榜和統計 API。
 - 支付寶充值：預下單、簽名回調驗證、訂單金額核對、交易號防重複、原子化上分。
 - AI 功能：內容審核、知識庫、FAQ 和 AI 對話頻道。
-- C# Windows 控制端：獨立 WinForms 控制客戶端與 ASP.NET Core 控制後端，可遠端執行消息、廣播、身份組、成員管理與頻道工具。
+- C# Windows 控制端：獨立 WinForms 控制客戶端與 ASP.NET Core 控制後端，可遠端執行消息、廣播、身份組、成員管理與頻道工具，並提供網站功能中心打開原 Web 面板全部功能頁。
 
 ## 專案結構
 
@@ -649,7 +649,7 @@ C:\nssm\nssm.exe restart GJBot
 C# 控制端位於 `csharp/`。它分成兩部分：
 
 - `GJBot.BotServer`：ASP.NET Core 控制後端，保存 Discord Bot Token 並呼叫 Discord API。
-- `GJBot.ControlClient`：WinForms Windows 控制客戶端，只保存後端地址與控制 API Key。
+- `GJBot.ControlClient`：WinForms Windows 控制客戶端，保存後端地址、網站地址與控制 API Key。
 
 如果後端部署在本機：
 
@@ -664,6 +664,7 @@ dotnet run --project E:\GJBOT\csharp\src\GJBot.ControlClient
 
 ```text
 後端地址：https://你的域名/control-api/
+網站地址：https://你的域名/
 API Key：Ubuntu 部署時填入的 GJBOT_CONTROL_API_KEY
 ```
 
