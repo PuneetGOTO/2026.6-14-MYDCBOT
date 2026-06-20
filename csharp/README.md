@@ -41,7 +41,7 @@ csharp/src/GJBot.ControlClient   WinForms Windows 控制客戶端
 
 ## 開源協議
 
-C# 控制端跟隨主專案使用 [MIT License](../LICENSE)。
+C# 控制端跟隨主專案使用 [GNU Affero General Public License v3.0 or later](../LICENSE)（AGPL-3.0-or-later）。如果修改後的控制後端、客戶端或機器人透過網路提供服務，需要公開修改後的完整對應源碼並保留相同授權。
 
 ## 需要安裝
 
