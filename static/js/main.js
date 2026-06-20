@@ -133,7 +133,14 @@ function setupCommonEventListeners(GUILD_ID, renderers = {}) {
         payload.form_id = form.id;
         const endpoint = `/api/guild/${GUILD_ID}/form_submit`;
         if (form.id === 'mute-form') { payload.target_id = payload.user_id; delete payload.user_id; }
-        if (form.id === 'balance-form' && event.submitter) { payload.sub_action = event.submitter.dataset.action; }
+        if (form.id === 'balance-form' && event.submitter) {
+            payload.sub_action = event.submitter.dataset.action;
+            payload.amount = String(payload.amount || '').trim();
+            if (!/^\d+$/.test(payload.amount)) {
+                alert('金额必须是非负整数。');
+                return;
+            }
+        }
         if (form.id === 'edit-item-form') { payload.action = form.querySelector('#item_slug').value ? "edit" : "add"; }
         if (['kb-add-form', 'faq-add-form', 'bot-whitelist-form', 'ai-dep-form'].includes(form.id)) { payload.action = 'add'; }
         const multiSelects = form.querySelectorAll("[multiple]");
@@ -317,12 +324,12 @@ function initializeGuildPage() {
         economy_stats: (data) => {
             if (!data.stats) return;
             const stats = data.stats;
-            document.getElementById('total-currency-stat').textContent = stats.total_currency.toLocaleString();
+            document.getElementById('total-currency-stat').textContent = stats.total_currency_display || String(stats.total_currency || 0);
             document.getElementById('economy-user-count-stat').textContent = stats.user_count.toLocaleString();
             const ctx = document.getElementById('economy-leaderboard-chart')?.getContext('2d');
             if (!ctx) return;
             const labels = stats.top_users.map(u => u.username);
-            const balances = stats.top_users.map(u => u.balance);
+            const balances = stats.top_users.map(u => u.balance_chart ?? Number(u.balance || 0));
             if (economyChart) economyChart.destroy();
             economyChart = new Chart(ctx, {
                 type: 'bar',

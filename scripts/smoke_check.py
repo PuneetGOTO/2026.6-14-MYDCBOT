@@ -34,6 +34,19 @@ def check_database_transactions() -> None:
         assert database.db_get_user_balance(1, 2, 0) == 150
         assert database.db_set_user_balance(1, 2, 12)
         assert database.db_get_user_balance(1, 2, 0) == 12
+        huge_balance = 10**80
+        assert database.db_set_user_balance(1, 2, huge_balance)
+        assert database.db_get_user_balance(1, 2, 0) == huge_balance
+        assert database.db_apply_user_balance_delta(1, 2, 10**70, default_balance=100)
+        assert database.db_get_user_balance(1, 2, 0) == huge_balance + 10**70
+        assert database.db_apply_user_balance_delta(1, 3, 10**75, default_balance=100)
+        leaderboard = database.db_get_leaderboard(1, 10)
+        assert leaderboard[0][0] == 2
+        stats = database.db_get_economy_stats(1)
+        expected_total = huge_balance + 10**70 + 100 + 10**75
+        assert stats["total_currency"] == str(expected_total)
+        assert stats["total_currency_display"] == str(expected_total)
+        assert stats["top_users"][0]["balance_display"] == str(huge_balance + 10**70)
 
         ok, _ = database.db_add_shop_item(1, "item", "Item", 10, "", None, 1, None)
         assert ok
@@ -64,7 +77,7 @@ def check_database_transactions() -> None:
         )
         completed_request = database.db_get_recharge_request_by_out_trade_no("trade-complete")
         assert completed_request["status"] == "COMPLETED"
-        assert database.db_get_user_balance(1, 2, 0) == 412
+        assert database.db_get_user_balance(1, 2, 0) == huge_balance + 10**70 + 400
 
         access_key = database.db_create_sub_account(
             "smoke-sub-account",

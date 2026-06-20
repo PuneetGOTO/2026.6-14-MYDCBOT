@@ -9679,10 +9679,16 @@ async def handle_form_submission(guild_id, data, user_session):
             is_authed, error = check_auth(guild_id, 'tab_economy')
             if not is_authed: return jsonify(status="error", message=error[0]), error[1]
             user_id = int(data['user_id'])
-            amount = int(data['amount'])
+            amount_raw = str(data.get('amount', '')).strip()
+            if not amount_raw.isdigit():
+                return jsonify(status="error", message="金额必须是非负整数。"), 400
+            amount = int(amount_raw)
             sub_action = data.get('sub_action')
             op_amount = -amount if sub_action == 'take' else amount
-            database.db_update_user_balance(guild.id, user_id, op_amount, is_delta=(sub_action != 'set'), default_balance=ECONOMY_DEFAULT_BALANCE)
+            if sub_action not in {'give', 'take', 'set'}:
+                return jsonify(status="error", message="未知的余额操作。"), 400
+            if not database.db_update_user_balance(guild.id, user_id, op_amount, is_delta=(sub_action != 'set'), default_balance=ECONOMY_DEFAULT_BALANCE):
+                return jsonify(status="error", message="用户余额更新失败，可能是余额不足或金额无效。"), 400
             return jsonify(status="success", message="用户余额已更新。")
 
         # --- 票据系统设置表单 ---

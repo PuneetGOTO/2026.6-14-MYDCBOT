@@ -33,6 +33,36 @@ ACCESS_KEY_HASH_PREFIX = "pbkdf2_sha256"
 ACCESS_KEY_HASH_ITERATIONS = 260_000
 
 
+def _coerce_balance(value: Any, default: int = 0) -> int:
+    """Return a Python big integer from any stored balance representation."""
+
+    if value is None:
+        return int(default)
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return int(default)
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        logging.warning("[DB Economy] Invalid stored balance %r; using default %s.", value, default)
+        return int(default)
+
+
+def _balance_to_storage(value: int) -> str:
+    """Store balances as decimal text so they can exceed SQLite INTEGER limits."""
+
+    return str(max(0, int(value)))
+
+
+def _safe_chart_number(value: int) -> int:
+    """Return a JS-safe chart value while preserving the exact display balance separately."""
+
+    return min(max(0, int(value)), 9_007_199_254_740_991)
+
+
 def _hash_access_key(access_key: str, salt: Optional[str] = None) -> str:
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac(
@@ -126,10 +156,35 @@ def initialize_database():
     CREATE TABLE IF NOT EXISTS {TABLE_USER_BALANCES} (
         guild_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
-        balance INTEGER NOT NULL DEFAULT 0,
+        balance TEXT NOT NULL DEFAULT '0',
         PRIMARY KEY (guild_id, user_id)
     )
     """)
+
+    cursor.execute(f"PRAGMA table_info({TABLE_USER_BALANCES})")
+    balance_columns = {row["name"]: row for row in cursor.fetchall()}
+    balance_column = balance_columns.get("balance")
+    if balance_column and (balance_column["type"] or "").upper() != "TEXT":
+        logging.warning("[DB Migration] Converting user balance storage to TEXT for big integer support.")
+        temp_table = f"{TABLE_USER_BALANCES}_bigint_migration"
+        cursor.execute(f"DROP TABLE IF EXISTS {temp_table}")
+        cursor.execute(f"""
+        CREATE TABLE {temp_table} (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            balance TEXT NOT NULL DEFAULT '0',
+            PRIMARY KEY (guild_id, user_id)
+        )
+        """)
+        cursor.execute(
+            f"""
+            INSERT INTO {temp_table} (guild_id, user_id, balance)
+            SELECT guild_id, user_id, CAST(balance AS TEXT)
+            FROM {TABLE_USER_BALANCES}
+            """
+        )
+        cursor.execute(f"DROP TABLE {TABLE_USER_BALANCES}")
+        cursor.execute(f"ALTER TABLE {temp_table} RENAME TO {TABLE_USER_BALANCES}")
 
     # --- 商店物品表 ---
     cursor.execute(f"""
@@ -297,7 +352,7 @@ def db_get_user_balance(guild_id: int, user_id: int, default_balance: int) -> in
         cursor.execute(f"SELECT balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
         row = cursor.fetchone()
         if row:
-            balance_to_return = row["balance"]
+            balance_to_return = _coerce_balance(row["balance"], default_balance)
     except sqlite3.Error as e:
         logging.error(f"[DB Economy Error] Error querying balance for user {user_id} in guild {guild_id}: {e}")
     finally:
@@ -321,7 +376,7 @@ def db_update_user_balance(guild_id: int, user_id: int, amount: int, is_delta: b
         cursor.execute(f"""
         INSERT INTO {TABLE_USER_BALANCES} (guild_id, user_id, balance) VALUES (?, ?, ?)
         ON CONFLICT(guild_id, user_id) DO UPDATE SET balance = excluded.balance
-        """, (guild_id, user_id, new_balance))
+        """, (guild_id, user_id, _balance_to_storage(new_balance)))
         
         conn.commit()
         return True
@@ -347,21 +402,27 @@ def db_apply_user_balance_delta(guild_id: int, user_id: int, delta: int, default
             VALUES (?, ?, ?)
             ON CONFLICT(guild_id, user_id) DO NOTHING
             """,
-            (guild_id, user_id, default_balance),
+            (guild_id, user_id, _balance_to_storage(default_balance)),
         )
+        cursor.execute(
+            f"SELECT balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        )
+        row = cursor.fetchone()
+        current_balance = _coerce_balance(row["balance"], default_balance) if row else int(default_balance)
+        new_balance = current_balance + int(delta)
+        if new_balance < 0:
+            conn.rollback()
+            return False
         cursor.execute(
             f"""
             UPDATE {TABLE_USER_BALANCES}
-            SET balance = balance + ?
+            SET balance = ?
             WHERE guild_id = ?
               AND user_id = ?
-              AND balance + ? >= 0
             """,
-            (delta, guild_id, user_id, delta),
+            (_balance_to_storage(new_balance), guild_id, user_id),
         )
-        if cursor.rowcount == 0:
-            conn.rollback()
-            return False
         conn.commit()
         return True
     except sqlite3.Error as e:
@@ -387,7 +448,7 @@ def db_set_user_balance(guild_id: int, user_id: int, balance: int) -> bool:
             VALUES (?, ?, ?)
             ON CONFLICT(guild_id, user_id) DO UPDATE SET balance = excluded.balance
             """,
-            (guild_id, user_id, balance),
+            (guild_id, user_id, _balance_to_storage(balance)),
         )
         conn.commit()
         return True
@@ -404,10 +465,13 @@ def db_set_user_balance(guild_id: int, user_id: int, balance: int) -> bool:
 def db_get_leaderboard(guild_id: int, limit: int) -> List[Tuple[int, int]]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(f"SELECT user_id, balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ? ORDER BY balance DESC LIMIT ?", (guild_id, limit))
-    leaderboard = cursor.fetchall()
+    cursor.execute(f"SELECT user_id, balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ?", (guild_id,))
+    leaderboard = [
+        (row["user_id"], _coerce_balance(row["balance"], 0))
+        for row in cursor.fetchall()
+    ]
     conn.close()
-    return leaderboard
+    return sorted(leaderboard, key=lambda item: item[1], reverse=True)[:limit]
 
 # =========================================
 # == 经济系统 - 服务器设置
@@ -851,24 +915,30 @@ def db_complete_recharge_and_credit_balance(
             VALUES (?, ?, ?)
             ON CONFLICT(guild_id, user_id) DO NOTHING
             """,
-            (guild_id, user_id, default_balance),
+            (guild_id, user_id, _balance_to_storage(default_balance)),
         )
         cursor.execute(
-            f"""
-            UPDATE {TABLE_USER_BALANCES}
-            SET balance = balance + ?
-            WHERE guild_id = ?
-              AND user_id = ?
-              AND balance + ? >= 0
-            """,
-            (amount_to_credit, guild_id, user_id, amount_to_credit),
+            f"SELECT balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
         )
-        if cursor.rowcount == 0:
+        row = cursor.fetchone()
+        current_balance = _coerce_balance(row["balance"], default_balance) if row else int(default_balance)
+        new_balance = current_balance + int(amount_to_credit)
+        if new_balance < 0:
             conn.rollback()
             logging.error(
                 f"[DB Recharge Error] Failed to credit balance for request {request_id}."
             )
             return False
+        cursor.execute(
+            f"""
+            UPDATE {TABLE_USER_BALANCES}
+            SET balance = ?
+            WHERE guild_id = ?
+              AND user_id = ?
+            """,
+            (_balance_to_storage(new_balance), guild_id, user_id),
+        )
 
         sql = (
             f"UPDATE {TABLE_RECHARGE_REQUESTS} "
@@ -1027,19 +1097,28 @@ def db_get_economy_stats(guild_id: int) -> Dict[str, Any]:
     }
     try:
         cursor.execute(
-            f"SELECT user_id, balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ? ORDER BY balance DESC LIMIT 10",
+            f"SELECT user_id, balance FROM {TABLE_USER_BALANCES} WHERE guild_id = ?",
             (guild_id,)
         )
-        stats["top_users"] = [dict(row) for row in cursor.fetchall()]
-
-        cursor.execute(
-            f"SELECT SUM(balance), COUNT(user_id) FROM {TABLE_USER_BALANCES} WHERE guild_id = ?",
-            (guild_id,)
-        )
-        summary_row = cursor.fetchone()
-        if summary_row:
-            stats["total_currency"] = summary_row[0] if summary_row[0] is not None else 0
-            stats["user_count"] = summary_row[1] if summary_row[1] is not None else 0
+        balances = [
+            {"user_id": row["user_id"], "balance": _coerce_balance(row["balance"], 0)}
+            for row in cursor.fetchall()
+        ]
+        balances.sort(key=lambda item: item["balance"], reverse=True)
+        stats["top_users"] = [
+            {
+                "user_id": item["user_id"],
+                "balance": str(item["balance"]),
+                "balance_display": str(item["balance"]),
+                "balance_chart": _safe_chart_number(item["balance"]),
+            }
+            for item in balances[:10]
+        ]
+        total_currency = sum(item["balance"] for item in balances)
+        stats["total_currency"] = str(total_currency)
+        stats["total_currency_display"] = str(total_currency)
+        stats["total_currency_chart"] = _safe_chart_number(total_currency)
+        stats["user_count"] = len(balances)
             
     except sqlite3.Error as e:
         logging.error(f"[DB Stats Error] Failed to get economy stats for guild {guild_id}: {e}")
