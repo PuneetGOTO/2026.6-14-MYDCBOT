@@ -16,6 +16,7 @@ python -m gjbot
 - 經濟與商店系統：餘額管理、庫存安全扣減、充值記錄、排行榜和統計 API。
 - 支付寶充值：預下單、簽名回調驗證、訂單金額核對、交易號防重複、原子化上分。
 - AI 功能：內容審核、知識庫、FAQ 和 AI 對話頻道。
+- C# Windows 控制端：獨立 WinForms 控制客戶端與 ASP.NET Core 控制後端，可遠端執行消息、廣播、身份組、成員管理與頻道工具。
 
 ## 專案結構
 
@@ -28,6 +29,7 @@ static/                        Web 面板 CSS 與 JavaScript
 scripts/smoke_check.py         本地 smoke test
 role_manager_bot.py            舊入口兼容啟動器
 alipay_callback_handler.py     支付寶回調兼容入口
+csharp/                        100% C# Windows 控制客戶端與 ASP.NET Core 控制後端
 ```
 
 架構說明可參考 [ARCHITECTURE.md](ARCHITECTURE.md)。
@@ -120,6 +122,15 @@ PORT=5000
 ALIPAY_CALLBACK_PORT=8080
 ECONOMY_DEFAULT_BALANCE=100
 ```
+
+C# 控制後端可選：
+
+```env
+GJBOT_CONTROL_API_KEY=replace-with-a-long-random-control-key
+```
+
+`DISCORD_BOT_TOKEN` 仍只放在後端環境中；Windows 控制客戶端只需要後端地址和 `GJBOT_CONTROL_API_KEY`。
+Ubuntu 一鍵部署會為 C# 控制後端另建 `csharp-control.env`，只包含 `DISCORD_BOT_TOKEN` 與 `GJBOT_CONTROL_API_KEY`。
 
 ## 本地測試
 
@@ -217,6 +228,14 @@ sudo ./get_bot.sh
 ```
 
 腳本會要求輸入域名、Discord Token、Web 管理密碼、OAuth2 憑證、支付寶資訊等。
+
+腳本也會詢問是否部署 C# 控制後端。如果選擇 `y`，它會在 Ubuntu 上安裝本地 .NET 8 SDK、發布 `csharp/src/GJBot.BotServer`，建立 `gjteam-bot-csharp-api` systemd 服務，並在 Nginx 增加：
+
+```text
+https://你的域名/control-api/
+```
+
+Windows 控制客戶端的「後端地址」就填這個 URL，API Key 填部署時輸入的 `GJBOT_CONTROL_API_KEY`。
 
 7. 查看服務狀態。
 
@@ -379,6 +398,113 @@ ALIPAY_NOTIFY_URL=https://bot.example.com/alipay/notify
 sudo systemctl restart gjteam-bot
 ```
 
+### Ubuntu / Debian 可選 C# 控制後端手動部署
+
+如果你不用一鍵腳本，也可以在同一台 Ubuntu / Debian VPS 上手動部署 C# 控制後端，供 Windows 控制客戶端遠端連線。
+
+1. 安裝 .NET 8 到專案本地目錄。
+
+```bash
+sudo su - gjteambot
+cd /home/gjteambot/GJTEAM-BOT
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+bash dotnet-install.sh --channel 8.0 --install-dir /home/gjteambot/GJTEAM-BOT/.dotnet
+```
+
+2. 發布 C# 後端。
+
+```bash
+/home/gjteambot/GJTEAM-BOT/.dotnet/dotnet publish \
+  /home/gjteambot/GJTEAM-BOT/csharp/src/GJBot.BotServer/GJBot.BotServer.csproj \
+  -c Release \
+  -o /home/gjteambot/GJTEAM-BOT/csharp-control-server \
+  --self-contained false
+exit
+```
+
+3. 建立 C# 控制後端專用環境檔。
+
+```bash
+sudo nano /home/gjteambot/GJTEAM-BOT/csharp-control.env
+```
+
+填入：
+
+```env
+DISCORD_BOT_TOKEN=replace-me
+GJBOT_CONTROL_API_KEY=replace-with-a-long-random-control-key
+```
+
+設定權限：
+
+```bash
+sudo chown gjteambot:gjteambot /home/gjteambot/GJTEAM-BOT/csharp-control.env
+sudo chmod 600 /home/gjteambot/GJTEAM-BOT/csharp-control.env
+```
+
+4. 建立 systemd 服務。
+
+```bash
+sudo nano /etc/systemd/system/gjteam-bot-csharp-api.service
+```
+
+貼上：
+
+```ini
+[Unit]
+Description=GJBot C# Control API
+After=network.target
+
+[Service]
+User=gjteambot
+Group=gjteambot
+WorkingDirectory=/home/gjteambot/GJTEAM-BOT
+EnvironmentFile=/home/gjteambot/GJTEAM-BOT/csharp-control.env
+ExecStart=/home/gjteambot/GJTEAM-BOT/.dotnet/dotnet /home/gjteambot/GJTEAM-BOT/csharp-control-server/GJBot.BotServer.dll --urls http://127.0.0.1:5088
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+啟動：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now gjteam-bot-csharp-api
+sudo journalctl -u gjteam-bot-csharp-api -f
+```
+
+5. 在 Nginx 站點中加入 C# 控制 API 反向代理。
+
+```nginx
+location = /control-api {
+    return 301 /control-api/;
+}
+
+location /control-api/ {
+    proxy_pass http://127.0.0.1:5088/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+套用：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Windows 控制客戶端的後端地址填：
+
+```text
+https://bot.example.com/control-api/
+```
+
 ## RHEL / Rocky Linux / AlmaLinux / CentOS 部署
 
 以下命令以 Rocky Linux 9 / AlmaLinux 9 為例。
@@ -517,6 +643,31 @@ C:\nssm\nssm.exe restart GJBot
 ### Windows 反向代理
 
 如果要公開 Web 面板，建議使用 Caddy 或 Nginx for Windows 做 HTTPS 反向代理。
+
+### Windows C# 控制客戶端
+
+C# 控制端位於 `csharp/`。它分成兩部分：
+
+- `GJBot.BotServer`：ASP.NET Core 控制後端，保存 Discord Bot Token 並呼叫 Discord API。
+- `GJBot.ControlClient`：WinForms Windows 控制客戶端，只保存後端地址與控制 API Key。
+
+如果後端部署在本機：
+
+```powershell
+$env:DISCORD_BOT_TOKEN="你的 Discord Bot Token"
+$env:GJBOT_CONTROL_API_KEY="你的控制 API Key"
+dotnet run --project E:\GJBOT\csharp\src\GJBot.BotServer --urls "http://localhost:5088"
+dotnet run --project E:\GJBOT\csharp\src\GJBot.ControlClient
+```
+
+如果後端已用 Ubuntu 部署到 VPS，Windows 客戶端填：
+
+```text
+後端地址：https://你的域名/control-api/
+API Key：Ubuntu 部署時填入的 GJBOT_CONTROL_API_KEY
+```
+
+更多 C# 使用方式見 `csharp/README.md`。
 
 Caddyfile 範例：
 
@@ -709,4 +860,3 @@ python -m py_compile role_manager_bot.py database.py music_cog.py alipay_callbac
 ### 資料重啟後遺失
 
 確認目前部署環境是否有持久化磁碟。SQLite 資料庫檔不要放在會被平台重置的臨時目錄。
-

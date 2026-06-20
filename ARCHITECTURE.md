@@ -12,6 +12,10 @@ monolithic implementation.
 - `gjbot.runtime` owns process startup: Alipay callback server, Web panel
   thread, and Discord bot startup.
 - `gjbot.legacy` is a lazy bridge to the existing monolithic module.
+- `csharp/` contains an optional pure C# control plane. It is deployed as a
+  separate ASP.NET Core service plus a WinForms client and talks to Discord via
+  REST API v10. It does not own the Python bot runtime, Flask sessions,
+  Socket.IO state, or SQLite domain state.
 
 ## Subsystem Adapters
 
@@ -34,6 +38,12 @@ monolithic implementation.
 - `gjbot.subsystems.database_impl` contains the database implementation.
 - `database.py` remains as a compatibility shim for existing imports.
 - `gjbot.subsystems.storage` exposes the database API through a package path.
+- `csharp/src/GJBot.BotServer` exposes the optional control API used by the
+  Windows client for Discord-native management actions such as messages, roles,
+  moderation, and channel tools.
+- `csharp/src/GJBot.ControlClient` is the Windows WinForms operator client.
+- `csharp/src/GJBot.Shared` contains the DTOs and typed API client shared by the
+  C# service and Windows client.
 
 ## Compatibility Rule
 
@@ -50,6 +60,7 @@ Run:
 python -m gjbot --check
 python scripts/smoke_check.py
 python -m py_compile role_manager_bot.py database.py music_cog.py alipay_callback_handler.py
+dotnet build csharp/GJBot.CSharp.sln -c Debug
 ```
 
 ## Data Safety Interfaces
