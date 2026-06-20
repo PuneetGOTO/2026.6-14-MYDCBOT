@@ -6087,6 +6087,72 @@ if FLASK_AVAILABLE:
     # ==========================================
     # 注意：下面所有代码都要有缩进，与上面的 socketio 对齐
 
+    def _get_voice_control_connect_timeout() -> float:
+        raw_value = os.environ.get("VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS", "75")
+        try:
+            return max(30.0, float(raw_value))
+        except (TypeError, ValueError):
+            logging.warning(
+                "[Voice Control] Invalid VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS=%r; using 75 seconds.",
+                raw_value,
+            )
+            return 75.0
+
+    VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS = _get_voice_control_connect_timeout()
+
+    def _voice_control_exception_message(exc: Exception) -> str:
+        if isinstance(exc, asyncio.TimeoutError):
+            return (
+                f"Discord 语音网关连接超时，已等待 {VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS:.0f} 秒仍未完成握手。"
+                "如果机器人会先短暂进入频道再自动退出，通常是运行环境无法稳定连接 Discord 语音 UDP 网关，"
+                "请检查主机 UDP 出站、服务器语音区域，以及机器人是否能收到语音状态事件。"
+            )
+        if isinstance(exc, discord.Forbidden):
+            return "Discord 拒绝连接语音频道，请检查机器人在该频道的连接和说话权限。"
+        if isinstance(exc, discord.ClientException):
+            detail = str(exc).strip()
+            return f"Discord 语音客户端状态异常: {detail or type(exc).__name__}"
+        detail = str(exc).strip()
+        return detail or type(exc).__name__
+
+    async def _disconnect_voice_client_for_channel_control(voice_client):
+        try:
+            await voice_client.disconnect(force=True)
+        except TypeError:
+            await voice_client.disconnect()
+        finally:
+            cleanup = getattr(voice_client, "cleanup", None)
+            if callable(cleanup):
+                cleanup()
+
+    async def _connect_channel_control_voice(guild: discord.Guild, channel: discord.VoiceChannel):
+        existing_voice = guild.voice_client
+        if existing_voice:
+            current_channel = getattr(existing_voice, "channel", None)
+            if (
+                not isinstance(existing_voice, wavelink.Player)
+                and existing_voice.is_connected()
+                and current_channel
+            ):
+                if current_channel.id != channel.id:
+                    await existing_voice.move_to(channel, timeout=VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS)
+                return existing_voice
+
+            logging.warning(
+                "[Voice Control] Clearing stale or music voice client before native join. guild=%s type=%s",
+                guild.id,
+                type(existing_voice).__name__,
+            )
+            await _disconnect_voice_client_for_channel_control(existing_voice)
+            await asyncio.sleep(1)
+
+        return await channel.connect(
+            timeout=VOICE_CONTROL_CONNECT_TIMEOUT_SECONDS,
+            reconnect=True,
+            self_deaf=False,
+            self_mute=False,
+        )
+
 # 1. 控制机器人进出语音 (带调试日志修复版)
     @socketio.on('voice_control_join')
     def handle_voice_join(data):
@@ -6148,13 +6214,19 @@ if FLASK_AVAILABLE:
                     voice_message,
                 )
 
-                if isinstance(guild.voice_client, wavelink.Player):
-                    await guild.voice_client.disconnect()
-                    await channel.connect()
-                elif guild.voice_client:
-                    await guild.voice_client.move_to(channel)
-                else:
-                    await channel.connect()
+                voice_client = await _connect_channel_control_voice(guild, channel)
+                bot_voice_state = getattr(bot_member, "voice", None)
+                connected_channel = getattr(voice_client, "channel", None)
+                if (
+                    not voice_client.is_connected()
+                    or not connected_channel
+                    or connected_channel.id != channel.id
+                    or not bot_voice_state
+                    or not bot_voice_state.channel
+                    or bot_voice_state.channel.id != channel.id
+                ):
+                    raise discord.ClientException("语音客户端已创建，但 Discord 未确认机器人处于目标语音频道。")
+
                 print("[DEBUG SOCKET] ✅ 原生语音连接成功")
 
                 # 通知前端状态更新
@@ -6163,9 +6235,10 @@ if FLASK_AVAILABLE:
                     socketio.emit('voice_control_status', {'message': f'已连接到 #{channel.name}'}, room=sid)
                     
             except Exception as e:
-                logging.exception(f"[Voice Control] Failed to join voice channel {channel_id}: {e}")
+                error_message = _voice_control_exception_message(e)
+                logging.exception(f"[Voice Control] Failed to join voice channel {channel_id}: {error_message}")
                 if socketio:
-                    socketio.emit('voice_control_error', {'message': f'连接语音频道失败: {e}'}, room=sid)
+                    socketio.emit('voice_control_error', {'message': f'连接语音频道失败: {error_message}'}, room=sid)
 
         # 提交任务到 Discord 事件循环
         if bot.loop and not bot.loop.is_closed():
