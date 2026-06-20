@@ -19,6 +19,7 @@
 對照原本 Python GJBot 的管理面板與斜線指令，目前 C# 版本已能直接控制 Discord REST API：
 
 - 後端健康檢查、Bot 身份檢查、列出 Bot 所在伺服器。
+- 網站功能中心：從 Windows 客戶端一鍵打開原 Web 面板所有功能頁，包括票據、音樂、AI 審核、經濟、備份、權限、副帳號與全域廣播。
 - 載入伺服器總覽：伺服器、頻道、身份組。
 - 消息/公告：單頻道文字消息、Embed 消息、批量廣播。
 - 私信通知：對指定使用者發送 DM。
@@ -93,9 +94,12 @@ E:\GJBOT\.dotnet\dotnet.exe run --project E:\GJBOT\csharp\src\GJBot.ControlClien
 在視窗中填：
 
 - 後端地址：`http://localhost:5088`
+- 網站地址：例如 `https://puneetblog.org`
 - 控制 API Key：和後端 `ControlApi:ApiKey` 相同
 - 伺服器 ID：目標 Discord guild ID
 - 頻道 ID：常用文字頻道 ID
+
+「網站功能中心」會使用網站地址打開原 Flask Web 面板。這些頁面仍需要原 Web 面板登入權限；如果 Cloudflare 對 `/control-api/` 有 Challenge，原生控制 API 會被擋，但網站功能中心打開的是一般 Web 頁面。
 
 ## 後端 API
 
