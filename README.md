@@ -27,8 +27,6 @@ gjbot/subsystems/              已抽出的子系統實作與適配器
 templates/                     Flask / Jinja Web 面板模板
 static/                        Web 面板 CSS 與 JavaScript
 scripts/smoke_check.py         本地 smoke test
-get_bot.sh                     Ubuntu / Debian 一鍵部署腳本
-get_bot_windows.ps1            Windows 本機與 Windows Server 運行腳本
 role_manager_bot.py            舊入口兼容啟動器
 alipay_callback_handler.py     支付寶回調兼容入口
 csharp/                        100% C# Windows 控制客戶端與 ASP.NET Core 控制後端
@@ -93,12 +91,6 @@ Discord Bot 必填：
 DISCORD_BOT_TOKEN=replace-me
 ```
 
-Discord 連線代理可選：
-
-```env
-DISCORD_PROXY_URL=http://127.0.0.1:7890
-```
-
 Web 面板必填：
 
 ```env
@@ -153,21 +145,23 @@ Ubuntu 一鍵部署會為 C# 控制後端另建 `csharp-control.env`，只包含
 ```powershell
 git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
 cd 2026.6-14-MYDCBOT
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-腳本會建立 `venv`、安裝依賴、按提示建立 `.env`、執行檢查，最後以前台方式啟動，等同於在虛擬環境中執行 `python -m gjbot`。
-
-如果 Windows 提示腳本未簽名，不要用 `. '...\get_bot_windows.ps1'` 這種 dot-source 方式執行。請使用上面的 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`，或先解除下載封鎖：
+建立 `.env` 後執行檢查：
 
 ```powershell
-Unblock-File .\get_bot_windows.ps1
+python -m gjbot --check
+python scripts\smoke_check.py
 ```
 
-如果只想安裝與檢查，不立即啟動：
+啟動：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local -NoStart
+python -m gjbot
 ```
 
 如果 PowerShell 不允許啟用虛擬環境，先用系統管理員 PowerShell 執行：
@@ -604,61 +598,9 @@ sudo certbot --nginx -d bot.example.com
 
 ## Windows 部署
 
-Windows 適合測試、內部使用，或部署在 Windows Server。公開生產環境請務必在前面放 HTTPS 反向代理。
+Windows 適合測試或內部使用。生產環境仍建議用 Linux + Nginx + HTTPS。
 
-### 方法一：使用 Windows 運行腳本
-
-本機前台運行：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
-```
-
-Windows Server 安裝成服務，請使用系統管理員 PowerShell：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm
-```
-
-如果是從 GitHub zip 或瀏覽器下載後解壓，Windows 可能會標記腳本為網路下載檔，導致「not digitally signed」。不要用 dot-source，例如 `. 'D:\...\get_bot_windows.ps1'`；請使用上面的 `-ExecutionPolicy Bypass -File`，或先執行：
-
-```powershell
-Unblock-File .\get_bot_windows.ps1
-```
-
-如果啟動停在 `discord.client: logging in using static token` 後出現 `TimeoutError`，代表這台 Windows 無法穩定連到 Discord API。可以在 `.env` 加入本機代理，例如：
-
-```env
-DISCORD_PROXY_URL=http://127.0.0.1:7890
-```
-
-請把端口改成你本機代理工具實際的 HTTP 代理端口。
-
-說明：
-
-- `-Mode Local`：本機使用，建立虛擬環境、安裝依賴、建立 `.env`、檢查並前台啟動。
-- `-Mode Server`：Windows Server 使用，建立虛擬環境、安裝依賴、建立 `.env`，並透過 NSSM 設成自動啟動的 Windows 服務。
-- `-ProjectDir C:\GJTEAM-BOT`：服務器上的專案位置；如果該目錄是空的，腳本會從 `RepoUrl` 克隆專案。
-- `-DownloadNssm`：找不到 `nssm.exe` 時，自動下載到 `C:\ProgramData\GJBot\nssm\nssm.exe`。
-- `-OpenFirewall`：只在需要直接開放 `5000` / `8080` 給內網或測試時使用；公開站點建議只開反向代理的 `80` / `443`。
-
-常用服務管理：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Status
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Restart
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Stop
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Start
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Uninstall
-```
-
-只安裝不立即啟動：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm -NoStart
-```
-
-### 方法二：手動 PowerShell 前台運行
+### 方法一：PowerShell 前台運行
 
 ```powershell
 git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
@@ -672,7 +614,7 @@ python scripts\smoke_check.py
 python -m gjbot
 ```
 
-### 方法三：手動使用 NSSM 設成 Windows 服務
+### 方法二：使用 NSSM 設成 Windows 服務
 
 1. 下載 NSSM：https://nssm.cc/download
 2. 解壓後把 `nssm.exe` 放到固定位置，例如 `C:\nssm\nssm.exe`。

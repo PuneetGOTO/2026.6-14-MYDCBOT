@@ -349,19 +349,7 @@ intents.webhooks = True         # 用于 webhook 事件
 print("Intents 配置完成：Members 和 Message Content 已明确设置为 True。")
 
 # --- Bot Initialization ---
-DISCORD_PROXY_URL = os.environ.get("DISCORD_PROXY_URL")
-if DISCORD_PROXY_URL:
-    print("Discord API 代理已启用，将通过 DISCORD_PROXY_URL 连接 Discord。")
-
-bot_options = {
-    "command_prefix": COMMAND_PREFIX,
-    "intents": intents,
-    "help_command": None,
-}
-if DISCORD_PROXY_URL:
-    bot_options["proxy"] = DISCORD_PROXY_URL
-
-bot = commands.Bot(**bot_options)
+bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents, help_command=None)
 bot.closing_tickets_in_progress = set()
 bot.approved_bot_whitelist = {}
 bot.persistent_views_added_in_setup = False
