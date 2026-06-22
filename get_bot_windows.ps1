@@ -101,11 +101,13 @@ function Invoke-Checked {
     )
 
     $oldLocation = Get-Location
+    $oldErrorActionPreference = $ErrorActionPreference
     try {
         if ($WorkingDirectory) {
             Set-Location -LiteralPath $WorkingDirectory
         }
 
+        $ErrorActionPreference = "Continue"
         & $FilePath @Arguments 2>&1 | ForEach-Object {
             Write-Host $_
         }
@@ -116,6 +118,7 @@ function Invoke-Checked {
         }
     }
     finally {
+        $ErrorActionPreference = $oldErrorActionPreference
         Set-Location $oldLocation
     }
 }
