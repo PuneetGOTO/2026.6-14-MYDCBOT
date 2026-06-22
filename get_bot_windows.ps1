@@ -308,6 +308,7 @@ function Ensure-EnvFile {
     $webAdminPassword = Read-SecretValue "Web admin password"
     $discordClientId = Read-TextValue "Discord OAuth client ID" ""
     $discordClientSecret = Read-SecretValue "Discord OAuth client secret"
+    $discordProxyUrl = Read-TextValue "Discord proxy URL (optional, example http://127.0.0.1:7890)" ""
 
     $domain = Read-TextValue "Public domain for callback URLs (blank for local defaults)" ""
     if ([string]::IsNullOrWhiteSpace($domain)) {
@@ -341,6 +342,7 @@ function Ensure-EnvFile {
     $lines = Add-DotEnvLine $lines "WEB_ADMIN_PASSWORD" $webAdminPassword
     $lines = Add-DotEnvLine $lines "DISCORD_CLIENT_ID" $discordClientId
     $lines = Add-DotEnvLine $lines "DISCORD_CLIENT_SECRET" $discordClientSecret
+    $lines = Add-DotEnvLine $lines "DISCORD_PROXY_URL" $discordProxyUrl -Optional
     $lines = Add-DotEnvLine $lines "DISCORD_REDIRECT_URI" $redirectUri
     $lines = Add-DotEnvLine $lines "PORT" $port
     $lines = Add-DotEnvLine $lines "ALIPAY_CALLBACK_PORT" $alipayCallbackPort
