@@ -106,9 +106,13 @@ function Invoke-Checked {
             Set-Location -LiteralPath $WorkingDirectory
         }
 
-        & $FilePath @Arguments
-        if ($LASTEXITCODE -ne 0) {
-            throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+        & $FilePath @Arguments 2>&1 | ForEach-Object {
+            Write-Host $_
+        }
+
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "Command failed with exit code ${exitCode}: $FilePath $($Arguments -join ' ')"
         }
     }
     finally {
