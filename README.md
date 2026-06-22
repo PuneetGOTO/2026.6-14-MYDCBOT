@@ -93,7 +93,7 @@ Discord Bot 必填：
 DISCORD_BOT_TOKEN=replace-me
 ```
 
-Discord 連線代理可選：
+Discord 連線代理可選。只有在本機已啟動 HTTP 代理、且端口確認可用時才填：
 
 ```env
 DISCORD_PROXY_URL=http://127.0.0.1:7890
@@ -626,13 +626,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode 
 Unblock-File .\get_bot_windows.ps1
 ```
 
-如果啟動停在 `discord.client: logging in using static token` 後出現 `TimeoutError`，代表這台 Windows 無法穩定連到 Discord API。可以在 `.env` 加入本機代理，例如：
+如果啟動停在 `discord.client: logging in using static token` 後出現 `TimeoutError`，代表這台 Windows 無法穩定連到 Discord API。可以在 `.env` 加入本機 HTTP 代理，例如：
 
 ```env
 DISCORD_PROXY_URL=http://127.0.0.1:7890
 ```
 
-請把端口改成你本機代理工具實際的 HTTP 代理端口。
+請把端口改成你本機代理工具實際正在監聽的 HTTP 代理端口；如果代理沒有啟動，或端口填錯，腳本會在啟動前停止並提示修正。
 
 說明：
 

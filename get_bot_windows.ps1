@@ -283,6 +283,90 @@ function Add-DotEnvLine {
     return ($Lines + "$Name=$(ConvertTo-DotEnvValue $Value)")
 }
 
+function Get-DotEnvValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+
+    $escapedName = [regex]::Escape($Name)
+    foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+        if ($line -match "^\s*$escapedName\s*=\s*(.*)\s*$") {
+            $value = $Matches[1].Trim()
+            if (($value.StartsWith("'") -and $value.EndsWith("'")) -or ($value.StartsWith('"') -and $value.EndsWith('"'))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+
+            return $value.Trim()
+        }
+    }
+
+    return ""
+}
+
+function Test-TcpConnectionFast {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutMs = 1500
+    )
+
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $asyncResult = $client.BeginConnect($HostName, $Port, $null, $null)
+        if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+            return $false
+        }
+
+        $client.EndConnect($asyncResult)
+        return $true
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $client.Close()
+    }
+}
+
+function Test-DiscordProxyConfig {
+    $envPath = Join-Path $ProjectDir ".env"
+    $proxyUrl = Get-DotEnvValue -Path $envPath -Name "DISCORD_PROXY_URL"
+    if ([string]::IsNullOrWhiteSpace($proxyUrl)) {
+        return
+    }
+
+    $proxyUri = $null
+    if (-not [Uri]::TryCreate($proxyUrl, [UriKind]::Absolute, [ref]$proxyUri)) {
+        throw "DISCORD_PROXY_URL is not a valid URL: $proxyUrl"
+    }
+
+    if ($proxyUri.Scheme -notin @("http", "https")) {
+        throw "DISCORD_PROXY_URL must be an HTTP proxy URL such as http://127.0.0.1:7890. Current value: $proxyUrl"
+    }
+
+    $port = $proxyUri.Port
+    if ($port -le 0) {
+        if ($proxyUri.Scheme -eq "https") {
+            $port = 443
+        }
+        else {
+            $port = 80
+        }
+    }
+
+    Write-Info "Checking DISCORD_PROXY_URL at $($proxyUri.Host):$port..."
+    if (-not (Test-TcpConnectionFast -HostName $proxyUri.Host -Port $port)) {
+        throw "DISCORD_PROXY_URL is set to '$proxyUrl', but $($proxyUri.Host):$port is not accepting connections. Start your proxy app, correct the port, or remove DISCORD_PROXY_URL from .env."
+    }
+
+    Write-Success "Discord proxy is reachable."
+}
+
 function Ensure-EnvFile {
     param([switch]$ServerMode)
 
@@ -308,7 +392,7 @@ function Ensure-EnvFile {
     $webAdminPassword = Read-SecretValue "Web admin password"
     $discordClientId = Read-TextValue "Discord OAuth client ID" ""
     $discordClientSecret = Read-SecretValue "Discord OAuth client secret"
-    $discordProxyUrl = Read-TextValue "Discord proxy URL (optional, example http://127.0.0.1:7890)" ""
+    $discordProxyUrl = Read-TextValue "Discord HTTP proxy URL (optional; leave blank unless your proxy is already listening, example http://127.0.0.1:7890)" ""
 
     $domain = Read-TextValue "Public domain for callback URLs (blank for local defaults)" ""
     if ([string]::IsNullOrWhiteSpace($domain)) {
@@ -665,6 +749,7 @@ try {
             Ensure-ProjectDirectory
             $venvPython = Ensure-Venv
             Ensure-EnvFile
+            Test-DiscordProxyConfig
             Run-ProjectChecks -VenvPython $venvPython
 
             if ($NoStart) {
@@ -680,6 +765,7 @@ try {
             Ensure-ProjectDirectory
             $venvPython = Ensure-Venv
             Ensure-EnvFile -ServerMode
+            Test-DiscordProxyConfig
             Run-ProjectChecks -VenvPython $venvPython
 
             $resolvedNssm = Resolve-NssmPath

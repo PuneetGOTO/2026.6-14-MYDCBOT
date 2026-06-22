@@ -101,6 +101,11 @@ class LegacyRuntime:
         except KeyboardInterrupt:
             print("\n收到退出信号 (Ctrl+C)，正在关闭机器人...")
         except Exception as exc:
+            if self.context.get("DISCORD_PROXY_URL"):
+                logging.critical(
+                    "Discord 代理连接失败。请确认 DISCORD_PROXY_URL 指向一个正在运行的 HTTP 代理；"
+                    "如果不需要代理，请从 .env 删除 DISCORD_PROXY_URL。"
+                )
             logging.critical(f"启动机器人时发生致命错误: {exc}", exc_info=True)
         finally:
             print("机器人主循环已结束。程序正在退出。")
