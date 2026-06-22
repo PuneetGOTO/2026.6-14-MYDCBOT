@@ -17,6 +17,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+    [Console]::OutputEncoding = $utf8NoBom
+    $OutputEncoding = $utf8NoBom
+}
+catch {
+    # Older hosts may not allow changing the console encoding. Python env vars above are the important part.
+}
 
 function Write-Info {
     param([string]$Message)
@@ -470,7 +480,7 @@ function Install-GJBotService {
         ,@("set", $ServiceName, "AppRotateSeconds", "86400"),
         ,@("set", $ServiceName, "AppRotateBytes", "10485760"),
         ,@("set", $ServiceName, "AppRestartDelay", "10000"),
-        ,@("set", $ServiceName, "AppEnvironmentExtra", "PYTHONUNBUFFERED=1")
+        ,@("set", $ServiceName, "AppEnvironmentExtra", "PYTHONUNBUFFERED=1", "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
     )
 
     foreach ($setting in $settings) {
