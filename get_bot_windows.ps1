@@ -43,17 +43,21 @@ function Show-Usage {
 GJBot Windows runner
 
 Local foreground run:
-  powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
 
 Windows Server service install with NSSM:
-  powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm
 
 Service management:
-  .\get_bot_windows.ps1 -Mode Status
-  .\get_bot_windows.ps1 -Mode Start
-  .\get_bot_windows.ps1 -Mode Stop
-  .\get_bot_windows.ps1 -Mode Restart
-  .\get_bot_windows.ps1 -Mode Uninstall
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Status
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Start
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Stop
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Restart
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Uninstall
+
+If Windows says the script is not digitally signed, do not dot-source the file.
+Run it with -ExecutionPolicy Bypass as shown above, or unblock it once:
+  Unblock-File .\get_bot_windows.ps1
 
 Useful switches:
   -NoStart          Set up only; do not start the bot or service.

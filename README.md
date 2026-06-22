@@ -147,15 +147,21 @@ Ubuntu 一鍵部署會為 C# 控制後端另建 `csharp-control.env`，只包含
 ```powershell
 git clone https://github.com/PuneetGOTO/2026.6-14-MYDCBOT.git
 cd 2026.6-14-MYDCBOT
-powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
 ```
 
 腳本會建立 `venv`、安裝依賴、按提示建立 `.env`、執行檢查，最後以前台方式啟動，等同於在虛擬環境中執行 `python -m gjbot`。
 
+如果 Windows 提示腳本未簽名，不要用 `. '...\get_bot_windows.ps1'` 這種 dot-source 方式執行。請使用上面的 `powershell -NoProfile -ExecutionPolicy Bypass -File ...`，或先解除下載封鎖：
+
+```powershell
+Unblock-File .\get_bot_windows.ps1
+```
+
 如果只想安裝與檢查，不立即啟動：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local -NoStart
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local -NoStart
 ```
 
 如果 PowerShell 不允許啟用虛擬環境，先用系統管理員 PowerShell 執行：
@@ -599,13 +605,19 @@ Windows 適合測試、內部使用，或部署在 Windows Server。公開生產
 本機前台運行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Local
 ```
 
 Windows Server 安裝成服務，請使用系統管理員 PowerShell：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm
+```
+
+如果是從 GitHub zip 或瀏覽器下載後解壓，Windows 可能會標記腳本為網路下載檔，導致「not digitally signed」。不要用 dot-source，例如 `. 'D:\...\get_bot_windows.ps1'`；請使用上面的 `-ExecutionPolicy Bypass -File`，或先執行：
+
+```powershell
+Unblock-File .\get_bot_windows.ps1
 ```
 
 說明：
@@ -619,17 +631,17 @@ powershell -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -Pro
 常用服務管理：
 
 ```powershell
-.\get_bot_windows.ps1 -Mode Status
-.\get_bot_windows.ps1 -Mode Restart
-.\get_bot_windows.ps1 -Mode Stop
-.\get_bot_windows.ps1 -Mode Start
-.\get_bot_windows.ps1 -Mode Uninstall
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Restart
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Stop
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Start
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Uninstall
 ```
 
 只安裝不立即啟動：
 
 ```powershell
-.\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm -NoStart
+powershell -NoProfile -ExecutionPolicy Bypass -File .\get_bot_windows.ps1 -Mode Server -ProjectDir C:\GJTEAM-BOT -DownloadNssm -NoStart
 ```
 
 ### 方法二：手動 PowerShell 前台運行
